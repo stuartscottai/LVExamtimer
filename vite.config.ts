@@ -3,5 +3,5 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/LVExamtimer/', // <-- change this to your repo name
+  base: '/LVExamtimer/', // 👈 must match your repo name exactly
 })
