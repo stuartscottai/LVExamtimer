@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, FullScreenButton } from './components';
+import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay } from './components';
 import { CAMBRIDGE_EXAMS } from './constants';
 import { Exam, Paper, TimerState } from './types';
 import './index.css';
@@ -15,7 +15,8 @@ const App: React.FC = () => {
         startTime: null,
         finishTime: null
     });
-    const [isFullScreen, setIsFullScreen] = useState(false);
+    const [isTimerScreen, setIsTimerScreen] = useState(false);
+    const [isBrowserFullScreen, setIsBrowserFullScreen] = useState(false);
 
     // Timer interval reference
     const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -28,91 +29,34 @@ const App: React.FC = () => {
                 return;
             }
 
-            // Space bar to start/pause timer (if paper is selected and not listening)
-            if (event.code === 'Space' && selectedPaper && !selectedPaper.isListening) {
+            // Space bar to start/pause timer from timer screen only
+            if (event.code === 'Space' && isTimerScreen && selectedPaper && !selectedPaper.isListening) {
                 event.preventDefault();
                 handleStartTimer();
             }
 
-            // 'R' key to reset timer (if paper is selected and not listening)
-            if (event.code === 'KeyR' && selectedPaper && !selectedPaper.isListening) {
+            // 'R' key to reset timer from timer screen only
+            if (event.code === 'KeyR' && isTimerScreen && selectedPaper && !selectedPaper.isListening) {
                 event.preventDefault();
                 handleResetTimer();
             }
 
-            // 'F' key to toggle full screen
-            if (event.code === 'KeyF') {
+            // 'F' key toggles browser fullscreen from timer screen only
+            if (event.code === 'KeyF' && isTimerScreen) {
                 event.preventDefault();
-                if (isFullScreen) {
-                    // Exit fullscreen with fallback
-                    const exitFullscreen = async () => {
-                        try {
-                            if (document.exitFullscreen) {
-                                await document.exitFullscreen();
-                            } else if ((document as any).webkitExitFullscreen) {
-                                await (document as any).webkitExitFullscreen();
-                            } else if ((document as any).mozCancelFullScreen) {
-                                await (document as any).mozCancelFullScreen();
-                            } else if ((document as any).msExitFullscreen) {
-                                await (document as any).msExitFullscreen();
-                            } else {
-                                setIsFullScreen(false);
-                            }
-                        } catch (error) {
-                            setIsFullScreen(false);
-                        }
-                    };
-                    exitFullscreen();
-                } else {
-                    // Enter fullscreen
-                    const element = document.documentElement;
-                    const enterFullscreen = async () => {
-                        try {
-                            if (element.requestFullscreen) {
-                                await element.requestFullscreen();
-                            } else if ((element as any).webkitRequestFullscreen) {
-                                await (element as any).webkitRequestFullscreen();
-                            } else if ((element as any).mozRequestFullScreen) {
-                                await (element as any).mozRequestFullScreen();
-                            } else if ((element as any).msRequestFullscreen) {
-                                await (element as any).msRequestFullscreen();
-                            }
-                        } catch (error) {
-                            console.error('Error entering fullscreen:', error);
-                        }
-                    };
-                    enterFullscreen();
-                }
+                void handleToggleBrowserFullScreen();
             }
 
-            // Escape key to exit full screen
-            if (event.code === 'Escape' && isFullScreen) {
-                const exitFullscreen = async () => {
-                    try {
-                        if (document.exitFullscreen) {
-                            await document.exitFullscreen();
-                        } else if ((document as any).webkitExitFullscreen) {
-                            await (document as any).webkitExitFullscreen();
-                        } else if ((document as any).mozCancelFullScreen) {
-                            await (document as any).mozCancelFullScreen();
-                        } else if ((document as any).msExitFullscreen) {
-                            await (document as any).msExitFullscreen();
-                        } else {
-                            setIsFullScreen(false);
-                        }
-                    } catch (error) {
-                        setIsFullScreen(false);
-                    }
-                };
-                exitFullscreen();
+            // Escape key exits browser fullscreen
+            if (event.code === 'Escape' && isBrowserFullScreen) {
+                event.preventDefault();
+                void exitBrowserFullScreen();
             }
-
-
         };
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [selectedPaper, isFullScreen, timerState.isRunning]);
+    }, [selectedPaper, isTimerScreen, isBrowserFullScreen, timerState.isRunning]);
 
     // Timer countdown effect
     useEffect(() => {
@@ -161,6 +105,34 @@ const App: React.FC = () => {
             }
         };
     }, [timerState.isRunning, timerState.timeRemaining]);
+
+    // Track browser fullscreen state changes (including ESC/F11 exits)
+    useEffect(() => {
+        const handleFullScreenChange = () => {
+            const isCurrentlyFullScreen = !!(
+                document.fullscreenElement ||
+                (document as any).webkitFullscreenElement ||
+                (document as any).mozFullScreenElement ||
+                (document as any).msFullscreenElement
+            );
+
+            setIsBrowserFullScreen(isCurrentlyFullScreen);
+        };
+
+        document.addEventListener('fullscreenchange', handleFullScreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullScreenChange as EventListener);
+        document.addEventListener('mozfullscreenchange', handleFullScreenChange as EventListener);
+        document.addEventListener('MSFullscreenChange', handleFullScreenChange as EventListener);
+
+        handleFullScreenChange();
+
+        return () => {
+            document.removeEventListener('fullscreenchange', handleFullScreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullScreenChange as EventListener);
+            document.removeEventListener('mozfullscreenchange', handleFullScreenChange as EventListener);
+            document.removeEventListener('MSFullscreenChange', handleFullScreenChange as EventListener);
+        };
+    }, []);
 
     // Get exam names for dropdown
     const examOptions = useMemo(() => 
@@ -254,18 +226,70 @@ const App: React.FC = () => {
         });
     };
 
-    // Handle full-screen toggle
-    const handleToggleFullScreen = (fullScreenState: boolean) => {
-        setIsFullScreen(fullScreenState);
+    const requestBrowserFullScreen = async () => {
+        const element = document.documentElement;
+
+        try {
+            if (element.requestFullscreen) {
+                await element.requestFullscreen();
+            } else if ((element as any).webkitRequestFullscreen) {
+                await (element as any).webkitRequestFullscreen();
+            } else if ((element as any).mozRequestFullScreen) {
+                await (element as any).mozRequestFullScreen();
+            } else if ((element as any).msRequestFullscreen) {
+                await (element as any).msRequestFullscreen();
+            }
+        } catch (error) {
+            setIsBrowserFullScreen(false);
+        }
     };
 
-    // Render full-screen proctoring mode
-    if (isFullScreen) {
+    const exitBrowserFullScreen = async () => {
+        try {
+            if (document.exitFullscreen) {
+                await document.exitFullscreen();
+            } else if ((document as any).webkitExitFullscreen) {
+                await (document as any).webkitExitFullscreen();
+            } else if ((document as any).mozCancelFullScreen) {
+                await (document as any).mozCancelFullScreen();
+            } else if ((document as any).msExitFullscreen) {
+                await (document as any).msExitFullscreen();
+            } else {
+                setIsBrowserFullScreen(false);
+            }
+        } catch (error) {
+            setIsBrowserFullScreen(false);
+        }
+    };
+
+    const handleToggleBrowserFullScreen = async () => {
+        if (isBrowserFullScreen) {
+            await exitBrowserFullScreen();
+            return;
+        }
+
+        await requestBrowserFullScreen();
+    };
+
+    const handleOpenTimerScreen = () => {
+        setIsTimerScreen(true);
+    };
+
+    const handleBackToHomeScreen = async () => {
+        if (isBrowserFullScreen) {
+            await exitBrowserFullScreen();
+        }
+
+        setIsTimerScreen(false);
+    };
+
+    // Render timer screen (windowed by default, optionally browser fullscreen)
+    if (isTimerScreen) {
         return (
             <div 
-                className="h-screen h-[100dvh] bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex flex-col md:flex-row relative overflow-y-auto md:overflow-hidden"
+                className="h-screen h-[100dvh] bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden flex flex-col"
                 role="application"
-                aria-label="Full-screen exam timer display"
+                aria-label="Exam timer screen display"
             >
                 {/* Animated background elements */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -273,39 +297,16 @@ const App: React.FC = () => {
                     <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}}></div>
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl animate-pulse" style={{animationDelay: '4s'}}></div>
                 </div>
-                {/* Exit Full Screen Button */}
-                <button
-                    onClick={() => {
-                        // Try multiple methods to exit fullscreen
-                        const exitFullscreen = async () => {
-                            try {
-                                if (document.exitFullscreen) {
-                                    await document.exitFullscreen();
-                                } else if ((document as any).webkitExitFullscreen) {
-                                    await (document as any).webkitExitFullscreen();
-                                } else if ((document as any).mozCancelFullScreen) {
-                                    await (document as any).mozCancelFullScreen();
-                                } else if ((document as any).msExitFullscreen) {
-                                    await (document as any).msExitFullscreen();
-                                } else {
-                                    // Fallback: manually set the state
-                                    setIsFullScreen(false);
-                                }
-                            } catch (error) {
-                                console.error('Error exiting fullscreen:', error);
-                                // Fallback: manually set the state
-                                setIsFullScreen(false);
-                            }
-                        };
-                        exitFullscreen();
-                    }}
-                    className="absolute top-3 right-3 sm:top-4 sm:right-4 lg:top-6 lg:right-6 z-20 bg-red-500/90 hover:bg-red-500 backdrop-blur-sm text-white w-10 h-10 sm:w-11 sm:h-11 lg:w-12 lg:h-12 rounded-full font-bold text-lg sm:text-xl transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-transparent shadow-lg hover:shadow-xl flex items-center justify-center"
-                    aria-label="Exit full-screen mode"
-                >
-                    {'\u2715'}
-                </button>
 
+                <Header
+                    isFullScreen={true}
+                    className="relative z-10"
+                    onBackToHome={handleBackToHomeScreen}
+                    onToggleFullscreen={handleToggleBrowserFullScreen}
+                    isFullscreenActive={isBrowserFullScreen}
+                />
 
+                <div className="relative z-10 flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
                 {/* Left Panel - Exam Information */}
                 <section 
                     className="w-full md:w-1/2 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-4 sm:p-6 lg:p-8 xl:p-10 flex flex-col justify-center relative overflow-y-auto min-h-[14rem] md:min-h-0"
@@ -332,7 +333,7 @@ const App: React.FC = () => {
                                 No Exam Selected
                             </div>
                             <div className="text-xl text-slate-500">
-                                Exit full screen to select an exam
+                                Go back to setup screen to select an exam
                             </div>
                         </div>
                     )}
@@ -387,6 +388,7 @@ const App: React.FC = () => {
                     )}
                 </section>
             </div>
+            </div>
         );
     }
 
@@ -407,11 +409,6 @@ const App: React.FC = () => {
                         <h2 className="text-lg sm:text-xl font-semibold text-slate-gray mb-4">
                             Exam Timer Setup
                         </h2>
-                        
-                        {/* Full Screen Button */}
-                        <div className="mb-6">
-                            <FullScreenButton onToggleFullScreen={handleToggleFullScreen} />
-                        </div>
 
 
                     </div>
@@ -447,46 +444,30 @@ const App: React.FC = () => {
                             />
                         </div>
 
-                        {/* Timer Display and Controls */}
+                        {/* Exam Information Preview */}
                         {selectedExam && selectedPaper && (
-                            <div className="mt-6 sm:mt-8 space-y-4 sm:space-y-6">
-                                {/* Exam Information Display */}
+                            <div className="mt-6 sm:mt-8 space-y-4">
                                 <ExamInfoDisplay
                                     selectedExam={selectedExam}
                                     selectedPaper={selectedPaper}
                                     timerState={timerState}
                                     isFullScreen={false}
                                 />
-
-                                {selectedPaper.isListening ? (
-                                    <div className="text-center p-6 bg-amber-50 border border-amber-200 rounded-lg">
-                                        <p className="text-lg text-amber-700 font-medium">
-                                            {'\u{1F3A7} Listening Test'}
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="text-center space-y-6">
-                                        {/* Timer Display */}
-                                        <div className="p-6 bg-white border-2 border-slate-200 rounded-lg">
-                                            <TimerDisplay 
-                                                timeRemaining={timerState.timeRemaining}
-                                                isFullScreen={false}
-                                            />
-                                        </div>
-
-                                        {/* Timer Controls */}
-                                        <TimerControls
-                                            onStart={handleStartTimer}
-                                            onPause={handleStartTimer}
-                                            onReset={handleResetTimer}
-                                            isRunning={timerState.isRunning}
-                                            isDisabled={false}
-                                            isFullScreen={false}
-                                        />
-                                    </div>
-                                )}
                             </div>
                         )}
+
+                        <div className="pt-4 border-t border-slate-200">
+                            <button
+                                type="button"
+                                onClick={handleOpenTimerScreen}
+                                disabled={!selectedExam || !selectedPaper}
+                                className="w-full inline-flex items-center justify-center px-4 py-3 text-base font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label="Go to timer screen"
+                                title="Go to timer screen"
+                            >
+                                Go to Timer Screen
+                            </button>
+                        </div>
                     </div>
                 </div>
             </main>
