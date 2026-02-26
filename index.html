@@ -1,12 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cambridge Exam Timer (Cut & Proctoring Display)</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cambridge Exam Timer</title>
+
+  <!-- PWA: manifest + theme color (served from /public on GH Pages) -->
+  <link rel="manifest" href="/LVExamtimer/manifest.webmanifest" />
+  <meta name="theme-color" content="#000000" />
+
+  <!-- Favicons (optional but nice) -->
+  <link rel="icon" href="/LVExamtimer/icon-192.png" sizes="192x192" />
+  <link rel="icon" href="/LVExamtimer/icon-512.png" sizes="512x512" />
+
+  <!-- Register Service Worker (must use the repo base path on GH Pages) -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker
+          .register("/LVExamtimer/service-worker.js")
+          .then(() => console.log("Service Worker registered"))
+          .catch(err => console.error("Service Worker registration failed:", err));
+      });
+    }
+  </script>
 </head>
 <body class="bg-slate-100 min-h-screen">
-    <div id="root"></div>
-    <script type="module" src="/src/App.tsx"></script>
+  <div id="root"></div>
+
+  <!-- Your app entry (keep as you had it) -->
+  <script type="module" src="/src/App.tsx"></script>
 </body>
 </html>
