@@ -39,11 +39,11 @@ const TimerControls: React.FC<TimerControlsProps> = ({
 
   // Size classes based on full-screen mode
   const buttonSizeClasses = isFullScreen
-    ? 'w-20 h-20 text-lg' // Large circular buttons for full-screen
+    ? 'w-[clamp(2.75rem,7vmin,5rem)] h-[clamp(2.75rem,7vmin,5rem)] text-lg'
     : 'px-6 py-3 text-base'; // Standard rectangular buttons
 
   // Icon size based on full-screen mode
-  const iconSize = isFullScreen ? 32 : 20;
+  const iconSize = isFullScreen ? 24 : 20;
 
   // Start/Pause button styling
   const startPauseClasses = isRunning
@@ -58,8 +58,8 @@ const TimerControls: React.FC<TimerControlsProps> = ({
 
   // Container classes based on full-screen mode - horizontal for full screen
   const containerClasses = isFullScreen
-    ? 'flex items-center justify-center space-x-8'
-    : 'flex items-center justify-center space-x-4';
+    ? 'flex items-center justify-center gap-[clamp(0.75rem,2vmin,2rem)]'
+    : 'flex items-center justify-center gap-4';
 
   return (
     <div className={`${containerClasses} ${className}`}>

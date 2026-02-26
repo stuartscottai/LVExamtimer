@@ -14,7 +14,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
   isFullScreen = false,
   className = ''
 }) => {
-  // Check if time is low (≤60 seconds) for urgency styling
+  // Check if time is low (<=60 seconds) for urgency styling
   const isLowTime = timeRemaining <= 60 && timeRemaining > 0;
   
   // Format the time for display
@@ -47,14 +47,14 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
     return (
       <div 
-        className={`w-full h-full flex items-center justify-center ${className}`}
+        className={`w-full h-full min-h-0 flex items-center justify-center p-1 sm:p-2 ${className}`}
         role="timer"
         aria-live="polite"
         aria-label={getTimeDescription()}
         title={getTimeDescription()}
       >
         {/* Container that maintains aspect ratio and uses available space */}
-        <div className="relative w-full h-full max-w-[85vh] max-h-[85vh] aspect-square flex items-center justify-center">
+        <div className="relative h-full aspect-square max-h-full max-w-full flex items-center justify-center">
           {/* SVG Circle Progress - fills container */}
           <svg
             className="transform -rotate-90 w-full h-full"
@@ -87,7 +87,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
           {/* Timer text perfectly centered in circle - much larger */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <div className={`font-mono font-bold ${isLowTime ? 'text-red-500 pulse-urgency' : 'text-gray-700'} text-[18vw] sm:text-[16vw] md:text-[14vw] lg:text-[12vw] xl:text-[10vw] 2xl:text-[8vw] leading-none`}>
+              <div className={`font-mono font-bold tabular-nums ${isLowTime ? 'text-red-500 pulse-urgency' : 'text-gray-700'} text-[clamp(2rem,11vmin,10rem)] leading-none`}>
                 {formattedTime}
               </div>
             </div>
@@ -125,3 +125,4 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
 };
 
 export default TimerDisplay;
+

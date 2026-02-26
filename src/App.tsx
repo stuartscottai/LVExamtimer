@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, FullScreenButton } from './components';
-import { LenguasVivasLogo } from './components/icons';
 import { CAMBRIDGE_EXAMS } from './constants';
 import { Exam, Paper, TimerState } from './types';
 import './index.css';
@@ -17,7 +16,6 @@ const App: React.FC = () => {
         finishTime: null
     });
     const [isFullScreen, setIsFullScreen] = useState(false);
-    const [textSizeMultiplier, setTextSizeMultiplier] = useState(0.8);
 
     // Timer interval reference
     const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -265,7 +263,7 @@ const App: React.FC = () => {
     if (isFullScreen) {
         return (
             <div 
-                className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex flex-col lg:flex-row relative overflow-hidden"
+                className="h-screen h-[100dvh] bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex flex-col md:flex-row relative overflow-y-auto md:overflow-hidden"
                 role="application"
                 aria-label="Full-screen exam timer display"
             >
@@ -301,16 +299,16 @@ const App: React.FC = () => {
                         };
                         exitFullscreen();
                     }}
-                    className="absolute top-6 right-6 z-20 bg-red-500/90 hover:bg-red-500 backdrop-blur-sm text-white w-12 h-12 rounded-full font-bold text-xl transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-transparent shadow-lg hover:shadow-xl flex items-center justify-center"
+                    className="absolute top-3 right-3 sm:top-4 sm:right-4 lg:top-6 lg:right-6 z-20 bg-red-500/90 hover:bg-red-500 backdrop-blur-sm text-white w-10 h-10 sm:w-11 sm:h-11 lg:w-12 lg:h-12 rounded-full font-bold text-lg sm:text-xl transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-transparent shadow-lg hover:shadow-xl flex items-center justify-center"
                     aria-label="Exit full-screen mode"
                 >
-                    ✕
+                    {'\u2715'}
                 </button>
 
 
                 {/* Left Panel - Exam Information */}
                 <section 
-                    className="w-full lg:w-1/2 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-6 sm:p-8 lg:p-12 flex flex-col justify-center relative overflow-hidden"
+                    className="w-full md:w-1/2 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-4 sm:p-6 lg:p-8 xl:p-10 flex flex-col justify-center relative overflow-y-auto min-h-[14rem] md:min-h-0"
                     aria-label="Exam information panel"
                 >
                     {/* Subtle background pattern */}
@@ -327,7 +325,6 @@ const App: React.FC = () => {
                             selectedPaper={selectedPaper}
                             timerState={timerState}
                             isFullScreen={true}
-                            textSizeMultiplier={textSizeMultiplier}
                         />
                     ) : (
                         <div className="text-center">
@@ -343,29 +340,30 @@ const App: React.FC = () => {
 
                 {/* Right Panel - Timer Display and Controls */}
                 <section 
-                    className="w-full lg:w-1/2 bg-white flex flex-col justify-center items-center relative min-h-screen"
+                    className="w-full md:w-1/2 bg-white flex flex-col justify-center items-center relative min-h-0"
                     aria-label="Timer display and controls"
                 >
                     {selectedExam && selectedPaper ? (
                         selectedPaper.isListening ? (
                             <div className="text-center">
-                                <div className="text-6xl font-bold text-slate-700 mb-8">
-                                    🎧 Listening Test
+                                <div className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-700 mb-6">
+                                    {'\u{1F3A7} Listening Test'}
                                 </div>
                             </div>
                         ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center p-4">
+                            <div className="w-full h-full min-h-0 flex flex-col items-center justify-center gap-3 sm:gap-4 lg:gap-6 p-3 sm:p-4 lg:p-6">
                                 {/* Circular Timer Display - uses most available space */}
-                                <div className="flex-1 w-full flex items-center justify-center">
+                                <div className="min-h-0 flex-1 w-full flex items-center justify-center">
                                     <TimerDisplay 
                                         timeRemaining={timerState.timeRemaining}
                                         totalTime={selectedPaper ? selectedPaper.durationMinutes * 60 : 0}
                                         isFullScreen={true}
+                                        className="max-h-full"
                                     />
                                 </div>
 
                                 {/* Timer Controls - positioned below circle */}
-                                <div className="flex-shrink-0 mt-4">
+                                <div className="flex-shrink-0 pb-1">
                                     <TimerControls
                                         onStart={handleStartTimer}
                                         onPause={handleStartTimer}
@@ -379,10 +377,10 @@ const App: React.FC = () => {
                         )
                     ) : (
                         <div className="text-center">
-                            <div className="text-6xl font-mono font-bold text-slate-400 mb-8">
+                            <div className="text-4xl sm:text-5xl lg:text-6xl font-mono font-bold text-slate-400 mb-6">
                                 00:00:00
                             </div>
-                            <div className="text-2xl text-slate-500">
+                            <div className="text-lg sm:text-xl lg:text-2xl text-slate-500">
                                 Select an exam to begin
                             </div>
                         </div>
@@ -463,7 +461,7 @@ const App: React.FC = () => {
                                 {selectedPaper.isListening ? (
                                     <div className="text-center p-6 bg-amber-50 border border-amber-200 rounded-lg">
                                         <p className="text-lg text-amber-700 font-medium">
-                                            🎧 Listening Test
+                                            {'\u{1F3A7} Listening Test'}
                                         </p>
                                     </div>
                                 ) : (
@@ -512,3 +510,4 @@ if (container) {
 }
 
 export default App;
+
