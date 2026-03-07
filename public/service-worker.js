@@ -1,6 +1,6 @@
 // ---- Cambridge Exam Timer PWA SW (GitHub Pages) ----
 const BASE = '/LVExamtimer/';                 // repo base path on GitHub Pages
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.0.1';
 const STATIC_CACHE = `exam-timer-static-${VERSION}`;
 const RUNTIME_CACHE = `exam-timer-runtime-${VERSION}`;
 
@@ -8,8 +8,8 @@ const STATIC_ASSETS = [
   BASE,
   BASE + 'index.html',
   BASE + 'manifest.webmanifest',
-  BASE + 'icon-192.png',
-  BASE + 'icon-512.png'
+  BASE + 'icon-192-v2.png',
+  BASE + 'icon-512-v2.png'
   // If you have crucial sounds/images, add them here, e.g.:
   // BASE + 'sounds/bell.mp3',
 ];
