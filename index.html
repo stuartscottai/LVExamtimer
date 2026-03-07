@@ -6,19 +6,23 @@
   <title>Cambridge Exam Timer</title>
 
   <!-- PWA: manifest + theme color (served from /public on GH Pages) -->
-  <link rel="manifest" href="/LVExamtimer/manifest.webmanifest" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#000000" />
 
-  <!-- Favicons (optional but nice) -->
-  <link rel="icon" href="/LVExamtimer/icon-192.png" sizes="192x192" />
-  <link rel="icon" href="/LVExamtimer/icon-512.png" sizes="512x512" />
+  <!-- Favicons and app icons -->
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
 
   <!-- Register Service Worker (must use the repo base path on GH Pages) -->
   <script>
-    if ("serviceWorker" in navigator) {
+    const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    if ("serviceWorker" in navigator && !isLocalhost) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
-          .register("/LVExamtimer/service-worker.js")
+          .register("%BASE_URL%service-worker.js")
           .then(() => console.log("Service Worker registered"))
           .catch(err => console.error("Service Worker registration failed:", err));
       });
