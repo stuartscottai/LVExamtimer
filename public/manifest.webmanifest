@@ -1,7 +1,8 @@
 {
   "name": "Cambridge Exam Timer",
   "short_name": "Exam Timer",
-  "start_url": "/LVExamtimer/",
+  "id": "/LVExamtimer/?pwa=3",
+  "start_url": "/LVExamtimer/?pwa=3",
   "scope": "/LVExamtimer/",
   "display": "standalone",
   "background_color": "#ffffff",
