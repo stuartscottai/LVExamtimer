@@ -19,7 +19,9 @@ const App: React.FC = () => {
     const [isBrowserFullScreen, setIsBrowserFullScreen] = useState(false);
 
     // Timer interval reference
-    const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pausedRemainingMsRef = useRef<number | null>(null);
+    const hasTimerCompletedRef = useRef(false);
 
     // Keyboard navigation support
     useEffect(() => {
@@ -58,53 +60,67 @@ const App: React.FC = () => {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [selectedPaper, isTimerScreen, isBrowserFullScreen, timerState.isRunning]);
 
-    // Timer countdown effect
+    // Timer countdown effect (clock-based to avoid interval drift)
     useEffect(() => {
-        if (timerState.isRunning && timerState.timeRemaining > 0) {
-            timerIntervalRef.current = setInterval(() => {
-                setTimerState(prevState => {
-                    const newTimeRemaining = prevState.timeRemaining - 1;
-                    
-                    // Check if timer has completed
-                    if (newTimeRemaining <= 0) {
-                        // Clear the interval
-                        if (timerIntervalRef.current) {
-                            clearInterval(timerIntervalRef.current);
-                            timerIntervalRef.current = null;
-                        }
-                        
-                        // Show completion alert
-                        alert("Time's up!");
-                        
-                        return {
-                            ...prevState,
-                            timeRemaining: 0,
-                            isRunning: false
-                        };
-                    }
-                    
-                    return {
-                        ...prevState,
-                        timeRemaining: newTimeRemaining
-                    };
-                });
-            }, 1000);
-        } else {
-            // Clear interval if timer is not running
-            if (timerIntervalRef.current) {
-                clearInterval(timerIntervalRef.current);
-                timerIntervalRef.current = null;
-            }
-        }
-
-        // Cleanup function
-        return () => {
+        const clearTimerInterval = () => {
             if (timerIntervalRef.current) {
                 clearInterval(timerIntervalRef.current);
                 timerIntervalRef.current = null;
             }
         };
-    }, [timerState.isRunning, timerState.timeRemaining]);
+
+        if (!timerState.isRunning || !timerState.finishTime) {
+            clearTimerInterval();
+            return clearTimerInterval;
+        }
+
+        const syncTimerToClock = () => {
+            setTimerState(prevState => {
+                if (!prevState.isRunning || !prevState.finishTime) {
+                    return prevState;
+                }
+
+                const remainingMs = Math.max(0, prevState.finishTime.getTime() - Date.now());
+                pausedRemainingMsRef.current = remainingMs;
+                const newTimeRemaining = Math.max(0, Math.ceil(remainingMs / 1000));
+
+                if (newTimeRemaining <= 0) {
+                    clearTimerInterval();
+
+                    return {
+                        ...prevState,
+                        timeRemaining: 0,
+                        isRunning: false
+                    };
+                }
+
+                if (newTimeRemaining === prevState.timeRemaining) {
+                    return prevState;
+                }
+
+                return {
+                    ...prevState,
+                    timeRemaining: newTimeRemaining
+                };
+            });
+        };
+
+        syncTimerToClock();
+        timerIntervalRef.current = setInterval(syncTimerToClock, 250);
+
+        return clearTimerInterval;
+    }, [timerState.isRunning, timerState.finishTime]);
+
+    // Keep alert side effects outside state updater logic
+    useEffect(() => {
+        const hasTimerStarted = !!timerState.startTime;
+        const hasTimerCompleted = !timerState.isRunning && timerState.timeRemaining === 0 && hasTimerStarted;
+
+        if (hasTimerCompleted && !hasTimerCompletedRef.current) {
+            hasTimerCompletedRef.current = true;
+            alert("Time's up!");
+        }
+    }, [timerState.isRunning, timerState.timeRemaining, timerState.startTime]);
 
     // Track browser fullscreen state changes (including ESC/F11 exits)
     useEffect(() => {
@@ -152,6 +168,8 @@ const App: React.FC = () => {
         setSelectedExam(exam);
         // Reset paper selection when exam changes
         setSelectedPaper(null);
+        pausedRemainingMsRef.current = null;
+        hasTimerCompletedRef.current = false;
         // Reset timer state when exam changes
         setTimerState({
             timeRemaining: 0,
@@ -170,6 +188,8 @@ const App: React.FC = () => {
         // Initialize timer duration based on selected paper
         if (paper) {
             const durationInSeconds = paper.durationMinutes * 60;
+            pausedRemainingMsRef.current = durationInSeconds * 1000;
+            hasTimerCompletedRef.current = false;
             setTimerState({
                 timeRemaining: durationInSeconds,
                 isRunning: false,
@@ -184,11 +204,22 @@ const App: React.FC = () => {
         if (!selectedPaper || selectedPaper.isListening) return;
         
         setTimerState(prevState => {
+            if (prevState.timeRemaining <= 0) {
+                return prevState;
+            }
+
             // If timer is already running, this is a pause action
             if (prevState.isRunning) {
+                const remainingMs = prevState.finishTime
+                    ? Math.max(0, prevState.finishTime.getTime() - Date.now())
+                    : Math.max(0, prevState.timeRemaining * 1000);
+                pausedRemainingMsRef.current = remainingMs;
+
                 return {
                     ...prevState,
-                    isRunning: false
+                    isRunning: false,
+                    finishTime: null,
+                    timeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
                 };
             }
             
@@ -196,6 +227,8 @@ const App: React.FC = () => {
             if (!prevState.startTime) {
                 const startTime = new Date();
                 const finishTime = new Date(startTime.getTime() + (selectedPaper.durationMinutes * 60 * 1000));
+                pausedRemainingMsRef.current = selectedPaper.durationMinutes * 60 * 1000;
+                hasTimerCompletedRef.current = false;
                 
                 return {
                     ...prevState,
@@ -206,9 +239,15 @@ const App: React.FC = () => {
             }
             
             // Resume from pause
+            const resumeRemainingMs = pausedRemainingMsRef.current ?? (prevState.timeRemaining * 1000);
+            const finishTime = new Date(Date.now() + resumeRemainingMs);
+            hasTimerCompletedRef.current = false;
+
             return {
                 ...prevState,
-                isRunning: true
+                isRunning: true,
+                finishTime,
+                timeRemaining: Math.max(0, Math.ceil(resumeRemainingMs / 1000))
             };
         });
     };
@@ -218,6 +257,8 @@ const App: React.FC = () => {
         if (!selectedPaper || selectedPaper.isListening) return;
         
         const durationInSeconds = selectedPaper.durationMinutes * 60;
+        pausedRemainingMsRef.current = durationInSeconds * 1000;
+        hasTimerCompletedRef.current = false;
         setTimerState({
             timeRemaining: durationInSeconds,
             isRunning: false,
