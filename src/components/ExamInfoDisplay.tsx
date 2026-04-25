@@ -17,8 +17,8 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const fitScaleRef = useRef(1);
-  const [fitScale, setFitScale] = useState(1);
+  const fontSizeRef = useRef(48);
+  const [fontSize, setFontSize] = useState(48);
 
   // Don't render if no exam or paper is selected
   if (!selectedExam || !selectedPaper) {
@@ -33,12 +33,12 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
   const durationFormatted = formatDuration(selectedPaper.durationMinutes);
 
   useEffect(() => {
-    fitScaleRef.current = fitScale;
-  }, [fitScale]);
+    fontSizeRef.current = fontSize;
+  }, [fontSize]);
 
   useEffect(() => {
     if (!isFullScreen) {
-      setFitScale(1);
+      setFontSize(48);
       return;
     }
 
@@ -63,21 +63,38 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
         return;
       }
 
-      const currentScale = fitScaleRef.current || 1;
       const measuredRect = content.getBoundingClientRect();
-      const naturalWidth = measuredRect.width / currentScale;
-      const naturalHeight = measuredRect.height / currentScale;
+      const renderedHeight = measuredRect.height;
 
-      if (!naturalWidth || !naturalHeight) {
+      if (!renderedHeight) {
         return;
       }
 
-      const scaleFromWidth = availableWidth / naturalWidth;
-      const scaleFromHeight = availableHeight / naturalHeight;
-      const nextScale = Math.max(0.5, Math.min(scaleFromWidth, scaleFromHeight) * 0.995);
+      let low = 12;
+      let high = Math.min(availableHeight / 3.8, availableWidth / 4.5, 96);
+      let best = low;
+      const previousFontSize = content.style.fontSize;
 
-      setFitScale(prevScale => (
-        Math.abs(prevScale - nextScale) > 0.01 ? nextScale : prevScale
+      for (let index = 0; index < 10; index += 1) {
+        const candidate = (low + high) / 2;
+        content.style.fontSize = `${candidate}px`;
+
+        const fits = content.scrollWidth <= availableWidth + 1
+          && content.scrollHeight <= availableHeight + 1;
+
+        if (fits) {
+          best = candidate;
+          low = candidate;
+        } else {
+          high = candidate;
+        }
+      }
+
+      content.style.fontSize = previousFontSize;
+      const nextFontSize = Math.max(12, best * 0.98);
+
+      setFontSize(prevFontSize => (
+        Math.abs(prevFontSize - nextFontSize) > 0.5 ? nextFontSize : prevFontSize
       ));
     };
 
@@ -86,16 +103,19 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
       animationFrame = requestAnimationFrame(measure);
     };
 
-    const resizeObserver = new ResizeObserver(scheduleMeasure);
-    resizeObserver.observe(container);
-    resizeObserver.observe(content);
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(scheduleMeasure)
+      : null;
+
+    resizeObserver?.observe(container);
+    resizeObserver?.observe(content);
 
     scheduleMeasure();
     window.addEventListener('resize', scheduleMeasure);
 
     return () => {
       cancelAnimationFrame(animationFrame);
-      resizeObserver.disconnect();
+      resizeObserver?.disconnect();
       window.removeEventListener('resize', scheduleMeasure);
     };
   }, [
@@ -115,29 +135,28 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
   const titleClasses = 'text-xl font-semibold text-slate-700 mb-6';
 
   const labelClasses = isFullScreen
-    ? 'text-lg font-semibold uppercase tracking-[0.06em] text-blue-700 leading-tight'
-    : 'text-base font-medium text-blue-600';
+    ? 'self-center text-[0.32em] font-semibold uppercase tracking-[0.08em] text-blue-700 leading-tight whitespace-nowrap'
+    : 'text-base font-medium uppercase text-blue-600 whitespace-nowrap';
 
   const valueClasses = isFullScreen
-    ? 'text-3xl font-bold text-slate-800 leading-tight break-words'
+    ? 'text-[1em] font-bold text-slate-800 leading-tight whitespace-normal break-normal'
     : 'text-lg font-semibold text-slate-800';
 
   const timeClasses = isFullScreen
-    ? 'text-3xl font-mono font-bold tabular-nums text-slate-800 leading-tight'
+    ? 'text-[1em] font-mono font-bold tabular-nums text-slate-800 leading-tight'
     : 'text-lg font-mono font-semibold text-slate-800';
 
   const sectionSpacingClasses = isFullScreen
-    ? 'inline-grid gap-5'
-    : 'space-y-4';
+    ? 'grid w-full grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-[0.55em] gap-y-[0.72em]'
+    : 'grid grid-cols-1 gap-y-4 sm:grid-cols-[max-content_minmax(0,1fr)] sm:items-baseline sm:gap-x-4';
 
   const itemClasses = isFullScreen
-    ? 'space-y-1.5'
-    : '';
+    ? 'contents'
+    : 'contents';
 
-  const fullScreenScaleStyles = isFullScreen
+  const fullScreenStyles = isFullScreen
     ? {
-      transform: `scale(${fitScale})`,
-      transformOrigin: 'top left'
+      fontSize: `${fontSize}px`
     }
     : undefined;
 
@@ -157,35 +176,35 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
       <div
         ref={contentRef}
         className={sectionSpacingClasses}
-        style={fullScreenScaleStyles}
+        style={fullScreenStyles}
       >
         {/* Centre Number */}
         <div className={itemClasses}>
-          <div className={labelClasses} id="centre-label">Centre Number</div>
+          <div className={labelClasses} id="centre-label">Centre Number:</div>
           <div className={valueClasses} aria-labelledby="centre-label">ES750</div>
         </div>
 
         {/* Exam Name */}
         <div className={itemClasses}>
-          <div className={labelClasses} id="exam-label">Exam</div>
+          <div className={labelClasses} id="exam-label">Exam:</div>
           <div className={valueClasses} aria-labelledby="exam-label">{selectedExam.name}</div>
         </div>
 
         {/* Paper Name */}
         <div className={itemClasses}>
-          <div className={labelClasses} id="paper-label">Paper</div>
+          <div className={labelClasses} id="paper-label">Paper:</div>
           <div className={valueClasses} aria-labelledby="paper-label">{selectedPaper.name}</div>
         </div>
 
         {/* Duration */}
         <div className={itemClasses}>
-          <div className={labelClasses} id="duration-label">Duration</div>
+          <div className={labelClasses} id="duration-label">Duration:</div>
           <div className={valueClasses} aria-labelledby="duration-label">{durationFormatted}</div>
         </div>
 
         {/* Start Time */}
         <div className={itemClasses}>
-          <div className={labelClasses} id="start-label">START Time</div>
+          <div className={labelClasses} id="start-label">Start Time:</div>
           <div
             className={timeClasses}
             aria-labelledby="start-label"
@@ -197,7 +216,7 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
 
         {/* Finish Time */}
         <div className={itemClasses}>
-          <div className={labelClasses} id="finish-label">FINISH Time</div>
+          <div className={labelClasses} id="finish-label">Finish Time:</div>
           <div
             className={timeClasses}
             aria-labelledby="finish-label"

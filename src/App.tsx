@@ -111,14 +111,13 @@ const App: React.FC = () => {
         return clearTimerInterval;
     }, [timerState.isRunning, timerState.finishTime]);
 
-    // Keep alert side effects outside state updater logic
+    // Track completed state outside state updater logic
     useEffect(() => {
         const hasTimerStarted = !!timerState.startTime;
         const hasTimerCompleted = !timerState.isRunning && timerState.timeRemaining === 0 && hasTimerStarted;
 
         if (hasTimerCompleted && !hasTimerCompletedRef.current) {
             hasTimerCompletedRef.current = true;
-            alert("Time's up!");
         }
     }, [timerState.isRunning, timerState.timeRemaining, timerState.startTime]);
 
@@ -393,27 +392,25 @@ const App: React.FC = () => {
                                 </div>
                             </div>
                         ) : (
-                            <div className="w-full h-full min-h-0 flex flex-col items-center justify-center gap-3 sm:gap-4 lg:gap-6 p-3 sm:p-4 lg:p-6">
-                                {/* Circular Timer Display - uses most available space */}
-                                <div className="min-h-0 flex-1 w-full flex items-center justify-center">
+                            <div className="w-full h-full min-h-0 flex items-center justify-center p-2 sm:p-3 lg:p-4">
+                                {/* Circular Timer Display - uses the available column space */}
+                                <div className="min-h-0 h-full w-full flex items-center justify-center">
                                     <TimerDisplay 
                                         timeRemaining={timerState.timeRemaining}
                                         totalTime={selectedPaper ? selectedPaper.durationMinutes * 60 : 0}
                                         isFullScreen={true}
+                                        isComplete={!!timerState.startTime && !timerState.isRunning && timerState.timeRemaining === 0}
                                         className="max-h-full"
-                                    />
-                                </div>
-
-                                {/* Timer Controls - positioned below circle */}
-                                <div className="flex-shrink-0 pb-1">
-                                    <TimerControls
-                                        onStart={handleStartTimer}
-                                        onPause={handleStartTimer}
-                                        onReset={handleResetTimer}
-                                        isRunning={timerState.isRunning}
-                                        isDisabled={false}
-                                        isFullScreen={true}
-                                    />
+                                    >
+                                        <TimerControls
+                                            onStart={handleStartTimer}
+                                            onPause={handleStartTimer}
+                                            onReset={handleResetTimer}
+                                            isRunning={timerState.isRunning}
+                                            isDisabled={false}
+                                            isFullScreen={true}
+                                        />
+                                    </TimerDisplay>
                                 </div>
                             </div>
                         )

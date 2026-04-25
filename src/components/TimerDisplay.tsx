@@ -5,16 +5,21 @@ interface TimerDisplayProps {
   timeRemaining: number; // in seconds
   totalTime?: number; // total time in seconds for progress calculation
   isFullScreen?: boolean;
+  isComplete?: boolean;
   className?: string;
+  children?: React.ReactNode;
 }
 
 const TimerDisplay: React.FC<TimerDisplayProps> = ({
   timeRemaining,
   totalTime = 0,
   isFullScreen = false,
-  className = ''
+  isComplete = false,
+  className = '',
+  children
 }) => {
   const fullScreenCircleRef = useRef<HTMLDivElement | null>(null);
+  const fullScreenTextAreaRef = useRef<HTMLDivElement | null>(null);
   const fullScreenTextRef = useRef<HTMLDivElement | null>(null);
   const textScaleRef = useRef(1);
   const [textScale, setTextScale] = useState(1);
@@ -30,6 +35,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
   const formattedTime = hours > 0
     ? formatTime(timeRemaining)
     : `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  const displayText = isComplete ? "Time's Up!" : formattedTime;
   
   // Calculate progress percentage (how much time has elapsed)
   const progressPercentage = totalTime > 0 ? ((totalTime - timeRemaining) / totalTime) * 100 : 0;
@@ -41,7 +47,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     if (minutes > 0) description += `${minutes} minute${minutes !== 1 ? 's' : ''} `;
     if (seconds > 0 || timeRemaining === 0) description += `${seconds} second${seconds !== 1 ? 's' : ''}`;
     
-    return description.trim() + ' remaining';
+    return isComplete ? "Time's up" : description.trim() + ' remaining';
   };
 
   useEffect(() => {
@@ -55,9 +61,10 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     }
 
     const circleElement = fullScreenCircleRef.current;
+    const textAreaElement = fullScreenTextAreaRef.current;
     const textElement = fullScreenTextRef.current;
 
-    if (!circleElement || !textElement) {
+    if (!circleElement || !textAreaElement || !textElement) {
       return;
     }
 
@@ -65,9 +72,10 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
     const fitText = () => {
       const circle = fullScreenCircleRef.current;
+      const textArea = fullScreenTextAreaRef.current;
       const text = fullScreenTextRef.current;
 
-      if (!circle || !text) {
+      if (!circle || !textArea || !text) {
         return;
       }
 
@@ -87,8 +95,6 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
         return;
       }
 
-      // Fit the text bounding rectangle inside the timer circle.
-      // This maximizes size while keeping all corners inside the inner safe radius.
       const diagonal = Math.sqrt((naturalWidth * naturalWidth) + (naturalHeight * naturalHeight));
       const nextScale = ((2 * safeInnerRadius) / diagonal) * 0.992;
 
@@ -102,19 +108,23 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
       animationFrame = requestAnimationFrame(fitText);
     };
 
-    const resizeObserver = new ResizeObserver(scheduleFit);
-    resizeObserver.observe(circleElement);
-    resizeObserver.observe(textElement);
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(scheduleFit)
+      : null;
+
+    resizeObserver?.observe(circleElement);
+    resizeObserver?.observe(textAreaElement);
+    resizeObserver?.observe(textElement);
 
     scheduleFit();
     window.addEventListener('resize', scheduleFit);
 
     return () => {
       cancelAnimationFrame(animationFrame);
-      resizeObserver.disconnect();
+      resizeObserver?.disconnect();
       window.removeEventListener('resize', scheduleFit);
     };
-  }, [isFullScreen, formattedTime]);
+  }, [isFullScreen, displayText]);
 
   if (isFullScreen) {
     // Circular timer design for full screen - match the reference layout
@@ -126,62 +136,69 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
     return (
       <div 
-        className={`w-full h-full min-h-0 flex items-center justify-center p-1 sm:p-2 ${className}`}
+        className={`w-full h-full min-h-0 flex flex-col items-center justify-center p-1 sm:p-2 cursor-default select-none ${className}`}
         role="timer"
         aria-live="polite"
         aria-label={getTimeDescription()}
-        title={getTimeDescription()}
       >
-        {/* Container that maintains aspect ratio and uses available space */}
-        <div
-          ref={fullScreenCircleRef}
-          className="relative h-full aspect-square max-h-full max-w-full flex items-center justify-center"
-        >
-          {/* SVG Circle Progress - fills container */}
-          <svg
-            className="transform -rotate-90 w-full h-full"
-            viewBox={`0 0 ${circleSize} ${circleSize}`}
+        <div className="min-h-0 w-full flex-1 flex items-center justify-center">
+          {/* Container that maintains aspect ratio and uses available space */}
+          <div
+            ref={fullScreenCircleRef}
+            className="relative h-full aspect-square max-h-full max-w-full flex items-center justify-center"
           >
-            {/* Background circle - very light gray */}
-            <circle
-              cx={circleSize / 2}
-              cy={circleSize / 2}
-              r={radius}
-              stroke="#f3f4f6"
-              strokeWidth={strokeWidth}
-              fill="none"
-            />
-            {/* Progress circle */}
-            <circle
-              cx={circleSize / 2}
-              cy={circleSize / 2}
-              r={radius}
-              stroke={isLowTime ? "#ef4444" : "#2563eb"}
-              strokeWidth={strokeWidth}
-              fill="none"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
-              className="transition-all duration-1000 ease-linear"
-            />
-          </svg>
-          
-          {/* Timer text perfectly centered in circle - much larger */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
+            {/* SVG Circle Progress - fills container */}
+            <svg
+              className="transform -rotate-90 w-full h-full"
+              viewBox={`0 0 ${circleSize} ${circleSize}`}
+            >
+              {/* Background circle - very light gray */}
+              <circle
+                cx={circleSize / 2}
+                cy={circleSize / 2}
+                r={radius}
+                stroke="#f3f4f6"
+                strokeWidth={strokeWidth}
+                fill="none"
+              />
+              {/* Progress circle */}
+              <circle
+                cx={circleSize / 2}
+                cy={circleSize / 2}
+                r={radius}
+              stroke={isComplete || isLowTime ? "#ef4444" : "#2563eb"}
+                strokeWidth={strokeWidth}
+                fill="none"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeDashoffset}
+                className="transition-all duration-1000 ease-linear"
+              />
+            </svg>
+
+            <div
+              ref={fullScreenTextAreaRef}
+            className="absolute inset-0 flex items-center justify-center overflow-hidden"
+            >
               <div
                 ref={fullScreenTextRef}
-                className={`font-mono font-bold tabular-nums whitespace-nowrap ${isLowTime ? 'text-red-500 pulse-urgency' : 'text-gray-700'} text-[16rem] leading-none`}
+                className={`font-bold tabular-nums whitespace-nowrap ${isComplete || isLowTime ? 'text-red-500' : 'text-gray-700'} ${isLowTime && !isComplete ? 'pulse-urgency' : ''} ${isComplete ? 'font-sans' : 'font-mono'} text-[16rem] leading-none`}
                 style={{
                   transform: `scale(${textScale})`,
                   transformOrigin: 'center center'
                 }}
               >
-                {formattedTime}
+                {displayText}
               </div>
             </div>
           </div>
         </div>
+
+        {children && (
+          <div className="flex flex-none justify-center pt-[clamp(0.25rem,1.5vmin,1rem)]">
+            {children}
+          </div>
+        )}
         
         {/* Screen reader only time description */}
         <span className="sr-only">{getTimeDescription()}</span>
@@ -200,13 +217,12 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
   
   return (
     <div 
-      className={`${baseClasses} ${sizeClasses} ${urgencyClasses} ${className}`}
+      className={`${baseClasses} ${sizeClasses} ${urgencyClasses} cursor-default select-none ${className}`}
       role="timer"
       aria-live="polite"
       aria-label={getTimeDescription()}
-      title={getTimeDescription()}
     >
-      {formattedTime}
+      <span className={isComplete ? 'text-red-500' : undefined}>{displayText}</span>
       {/* Screen reader only time description */}
       <span className="sr-only">{getTimeDescription()}</span>
     </div>
