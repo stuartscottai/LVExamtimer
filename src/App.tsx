@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay } from './components';
-import { CAMBRIDGE_EXAMS } from './constants';
+import { CAMBRIDGE_EXAMS, MULTIPLE_EXAM_OPTIONS } from './constants';
 import { Exam, Paper, TimerState } from './types';
 import './index.css';
 
@@ -150,8 +150,13 @@ const App: React.FC = () => {
     }, []);
 
     // Get exam names for dropdown
-    const examOptions = useMemo(() => 
-        CAMBRIDGE_EXAMS.map(exam => exam.name), 
+    const examOptions = useMemo(() =>
+        CAMBRIDGE_EXAMS.map(exam => exam.name),
+        []
+    );
+
+    const multipleExamOptions = useMemo(() =>
+        MULTIPLE_EXAM_OPTIONS.map(exam => exam.name),
         []
     );
 
@@ -163,7 +168,7 @@ const App: React.FC = () => {
 
     // Handle exam selection
     const handleExamSelect = (examName: string) => {
-        const exam = CAMBRIDGE_EXAMS.find(e => e.name === examName) || null;
+        const exam = [...CAMBRIDGE_EXAMS, ...MULTIPLE_EXAM_OPTIONS].find(e => e.name === examName) || null;
         setSelectedExam(exam);
         // Reset paper selection when exam changes
         setSelectedPaper(null);
@@ -460,6 +465,8 @@ const App: React.FC = () => {
                             <Dropdown
                                 id="exam-select"
                                 options={examOptions}
+                                submenuLabel="Multiple Exams"
+                                submenuOptions={multipleExamOptions}
                                 value={selectedExam?.name || ''}
                                 onChange={handleExamSelect}
                                 placeholder="Choose an exam..."

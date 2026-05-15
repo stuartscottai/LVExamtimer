@@ -135,7 +135,7 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
   const titleClasses = 'text-xl font-semibold text-slate-700 mb-6';
 
   const labelClasses = isFullScreen
-    ? 'self-center text-[0.32em] font-semibold uppercase tracking-[0.08em] text-blue-700 leading-tight whitespace-nowrap'
+    ? 'self-center text-[0.46em] font-semibold uppercase tracking-[0.04em] text-blue-700 leading-[1.05] whitespace-nowrap'
     : 'text-base font-medium uppercase text-blue-600 whitespace-nowrap';
 
   const valueClasses = isFullScreen
@@ -147,7 +147,7 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
     : 'text-lg font-mono font-semibold text-slate-800';
 
   const sectionSpacingClasses = isFullScreen
-    ? 'grid w-full grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-[0.55em] gap-y-[0.72em]'
+    ? 'grid w-full grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-[0.42em] gap-y-[0.72em]'
     : 'grid grid-cols-1 gap-y-4 sm:grid-cols-[max-content_minmax(0,1fr)] sm:items-baseline sm:gap-x-4';
 
   const itemClasses = isFullScreen
@@ -180,7 +180,16 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
       >
         {/* Centre Number */}
         <div className={itemClasses}>
-          <div className={labelClasses} id="centre-label">Centre Number:</div>
+          <div className={labelClasses} id="centre-label">
+            {isFullScreen ? (
+              <>
+                Centre<br />
+                Number:
+              </>
+            ) : (
+              'Centre Number:'
+            )}
+          </div>
           <div className={valueClasses} aria-labelledby="centre-label">ES750</div>
         </div>
 

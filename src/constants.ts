@@ -89,3 +89,37 @@ export const CAMBRIDGE_EXAMS: Exam[] = [
     ]
   }
 ];
+
+export const MULTIPLE_EXAM_OPTIONS: Exam[] = [
+  {
+    name: "A2 Key & A2 Key for Schools",
+    papers: [
+      { name: "Reading & Writing", durationMinutes: 60 },
+      { name: "Listening", durationMinutes: 30, isListening: true }
+    ]
+  },
+  {
+    name: "B1 Preliminary & B1 Preliminary for Schools",
+    papers: [
+      { name: "Reading", durationMinutes: 45 },
+      { name: "Writing", durationMinutes: 45 },
+      { name: "Listening", durationMinutes: 30, isListening: true }
+    ]
+  },
+  {
+    name: "B2 First Certificate & B2 First Certificate for Schools",
+    papers: [
+      { name: "Reading & Use of English", durationMinutes: 75 },
+      { name: "Writing", durationMinutes: 80 },
+      { name: "Listening", durationMinutes: 40, isListening: true }
+    ]
+  },
+  {
+    name: "C1 Advanced & C2 Proficiency",
+    papers: [
+      { name: "Reading & Use of English", durationMinutes: 90 },
+      { name: "Writing", durationMinutes: 90 },
+      { name: "Listening", durationMinutes: 40, isListening: true }
+    ]
+  }
+];
