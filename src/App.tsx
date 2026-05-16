@@ -1,25 +1,129 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay } from './components';
-import { CAMBRIDGE_EXAMS, MULTIPLE_EXAM_OPTIONS } from './constants';
+import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, PauseIcon, PlayIcon, ResetIcon } from './components';
+import { CAMBRIDGE_EXAMS, CENTRE_NUMBER, MULTIPLE_EXAM_OPTIONS } from './constants';
 import { Exam, Paper, TimerState } from './types';
+import { formatDuration, formatTime, formatTimeHHMM } from './utils';
 import './index.css';
+
+type TimerMode = 'single' | 'multiple';
+
+interface MultiTimerSession {
+    id: number;
+    selectedExam: Exam | null;
+    selectedPaper: Paper | null;
+    timerState: TimerState;
+    pausedRemainingMs: number | null;
+}
+
+const createInitialTimerState = (): TimerState => ({
+    timeRemaining: 0,
+    isRunning: false,
+    startTime: null,
+    finishTime: null
+});
+
+const createEmptyMultiTimer = (id: number): MultiTimerSession => ({
+    id,
+    selectedExam: null,
+    selectedPaper: null,
+    timerState: createInitialTimerState(),
+    pausedRemainingMs: null
+});
+
+const getDoubleTimerAccentClasses = (examName: string) => {
+    if (examName.includes('Key')) {
+        return {
+            text: 'text-teal-700',
+            bg: 'bg-teal-600',
+            border: 'border-teal-500',
+            chip: 'bg-teal-50'
+        };
+    }
+
+    if (examName.includes('Preliminary')) {
+        return {
+            text: 'text-rose-700',
+            bg: 'bg-rose-600',
+            border: 'border-rose-500',
+            chip: 'bg-rose-50'
+        };
+    }
+
+    if (examName.includes('First')) {
+        return {
+            text: 'text-lime-700',
+            bg: 'bg-lime-500',
+            border: 'border-lime-500',
+            chip: 'bg-lime-50'
+        };
+    }
+
+    if (examName.includes('Advanced')) {
+        return {
+            text: 'text-cyan-700',
+            bg: 'bg-cyan-600',
+            border: 'border-cyan-500',
+            chip: 'bg-cyan-50'
+        };
+    }
+
+    if (examName.includes('Proficiency')) {
+        return {
+            text: 'text-indigo-800',
+            bg: 'bg-indigo-800',
+            border: 'border-indigo-700',
+            chip: 'bg-indigo-50'
+        };
+    }
+
+    return {
+        text: 'text-blue-700',
+        bg: 'bg-blue-600',
+        border: 'border-blue-500',
+        chip: 'bg-blue-50'
+    };
+};
+
+const formatTimerDisplay = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    if (hours > 0) {
+        return formatTime(seconds);
+    }
+
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+const formatFourDigitTimerDisplay = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    if (hours > 0) {
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    }
+
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
 
 // Main App Component
 const App: React.FC = () => {
     const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
     const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
-    const [timerState, setTimerState] = useState<TimerState>({
-        timeRemaining: 0,
-        isRunning: false,
-        startTime: null,
-        finishTime: null
-    });
+    const [timerState, setTimerState] = useState<TimerState>(createInitialTimerState());
+    const [timerMode, setTimerMode] = useState<TimerMode>('single');
+    const [multiTimers, setMultiTimers] = useState<MultiTimerSession[]>([
+        createEmptyMultiTimer(1)
+    ]);
     const [isTimerScreen, setIsTimerScreen] = useState(false);
     const [isBrowserFullScreen, setIsBrowserFullScreen] = useState(false);
 
     // Timer interval reference
     const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const multiTimerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const nextMultiTimerIdRef = useRef(2);
     const pausedRemainingMsRef = useRef<number | null>(null);
     const hasTimerCompletedRef = useRef(false);
 
@@ -32,13 +136,13 @@ const App: React.FC = () => {
             }
 
             // Space bar to start/pause timer from timer screen only
-            if (event.code === 'Space' && isTimerScreen && selectedPaper && !selectedPaper.isListening) {
+            if (event.code === 'Space' && timerMode === 'single' && isTimerScreen && selectedPaper && !selectedPaper.isListening) {
                 event.preventDefault();
                 handleStartTimer();
             }
 
             // 'R' key to reset timer from timer screen only
-            if (event.code === 'KeyR' && isTimerScreen && selectedPaper && !selectedPaper.isListening) {
+            if (event.code === 'KeyR' && timerMode === 'single' && isTimerScreen && selectedPaper && !selectedPaper.isListening) {
                 event.preventDefault();
                 handleResetTimer();
             }
@@ -58,7 +162,7 @@ const App: React.FC = () => {
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [selectedPaper, isTimerScreen, isBrowserFullScreen, timerState.isRunning]);
+    }, [selectedPaper, isTimerScreen, isBrowserFullScreen, timerState.isRunning, timerMode]);
 
     // Timer countdown effect (clock-based to avoid interval drift)
     useEffect(() => {
@@ -111,6 +215,75 @@ const App: React.FC = () => {
         return clearTimerInterval;
     }, [timerState.isRunning, timerState.finishTime]);
 
+    const hasRunningMultiTimer = multiTimers.some(timer => timer.timerState.isRunning && timer.timerState.finishTime);
+    const handleToggleAllMultiTimers = () => {
+        if (hasRunningMultiTimer) {
+            handlePauseAllMultiTimers();
+            return;
+        }
+
+        handleStartAllMultiTimers();
+    };
+
+    // Multiple timer countdown effect
+    useEffect(() => {
+        const clearMultiTimerInterval = () => {
+            if (multiTimerIntervalRef.current) {
+                clearInterval(multiTimerIntervalRef.current);
+                multiTimerIntervalRef.current = null;
+            }
+        };
+
+        if (!hasRunningMultiTimer) {
+            clearMultiTimerInterval();
+            return clearMultiTimerInterval;
+        }
+
+        const syncTimersToClock = () => {
+            setMultiTimers(prevTimers => prevTimers.map(timer => {
+                if (!timer.timerState.isRunning || !timer.timerState.finishTime) {
+                    return timer;
+                }
+
+                const remainingMs = Math.max(0, timer.timerState.finishTime.getTime() - Date.now());
+                const newTimeRemaining = Math.max(0, Math.ceil(remainingMs / 1000));
+
+                if (newTimeRemaining <= 0) {
+                    return {
+                        ...timer,
+                        pausedRemainingMs: 0,
+                        timerState: {
+                            ...timer.timerState,
+                            timeRemaining: 0,
+                            isRunning: false
+                        }
+                    };
+                }
+
+                if (newTimeRemaining === timer.timerState.timeRemaining) {
+                    return {
+                        ...timer,
+                        pausedRemainingMs: remainingMs
+                    };
+                }
+
+                return {
+                    ...timer,
+                    pausedRemainingMs: remainingMs,
+                    timerState: {
+                        ...timer.timerState,
+                        timeRemaining: newTimeRemaining
+                    }
+                };
+            }));
+        };
+
+        syncTimersToClock();
+        multiTimerIntervalRef.current = setInterval(syncTimersToClock, 250);
+
+        return clearMultiTimerInterval;
+    }, [hasRunningMultiTimer]);
+
     // Track completed state outside state updater logic
     useEffect(() => {
         const hasTimerStarted = !!timerState.startTime;
@@ -149,14 +322,41 @@ const App: React.FC = () => {
         };
     }, []);
 
-    // Get exam names for dropdown
-    const examOptions = useMemo(() =>
-        CAMBRIDGE_EXAMS.map(exam => exam.name),
+    const multipleExamOptions = useMemo(() =>
+        MULTIPLE_EXAM_OPTIONS.map(exam => exam.name),
         []
     );
 
-    const multipleExamOptions = useMemo(() =>
-        MULTIPLE_EXAM_OPTIONS.map(exam => exam.name),
+    const examOptionGroups = useMemo(() => [
+        {
+            label: 'Young Learners',
+            options: ['A1 Starters', 'A1 Movers', 'A2 Flyers']
+        },
+        {
+            label: 'A2 Key',
+            options: ['A2 Key', 'A2 Key for Schools']
+        },
+        {
+            label: 'B1 Preliminary',
+            options: ['B1 Preliminary', 'B1 Preliminary for Schools']
+        },
+        {
+            label: 'B2 First',
+            options: ['B2 First Certificate', 'B2 First Certificate for Schools']
+        },
+        {
+            label: 'Multiple Exams',
+            options: multipleExamOptions
+        }
+    ], [multipleExamOptions]);
+
+    const directExamOptions = useMemo(() => [
+        'C1 Advanced',
+        'C2 Proficiency'
+    ], []);
+
+    const allAvailableExams = useMemo(() =>
+        [...CAMBRIDGE_EXAMS, ...MULTIPLE_EXAM_OPTIONS],
         []
     );
 
@@ -168,7 +368,7 @@ const App: React.FC = () => {
 
     // Handle exam selection
     const handleExamSelect = (examName: string) => {
-        const exam = [...CAMBRIDGE_EXAMS, ...MULTIPLE_EXAM_OPTIONS].find(e => e.name === examName) || null;
+        const exam = allAvailableExams.find(e => e.name === examName) || null;
         setSelectedExam(exam);
         // Reset paper selection when exam changes
         setSelectedPaper(null);
@@ -201,6 +401,171 @@ const App: React.FC = () => {
                 finishTime: null
             });
         }
+    };
+
+    const handleMultiExamSelect = (timerId: number, examName: string) => {
+        const exam = allAvailableExams.find(e => e.name === examName) || null;
+
+        setMultiTimers(prevTimers => prevTimers.map(timer => (
+            timer.id === timerId
+                ? {
+                    ...timer,
+                    selectedExam: exam,
+                    selectedPaper: null,
+                    pausedRemainingMs: null,
+                    timerState: createInitialTimerState()
+                }
+                : timer
+        )));
+    };
+
+    const handleMultiPaperSelect = (timerId: number, paperName: string) => {
+        setMultiTimers(prevTimers => prevTimers.map(timer => {
+            if (timer.id !== timerId || !timer.selectedExam) {
+                return timer;
+            }
+
+            const paper = timer.selectedExam.papers.find(p => p.name === paperName) || null;
+            const durationInSeconds = paper ? paper.durationMinutes * 60 : 0;
+
+            return {
+                ...timer,
+                selectedPaper: paper,
+                pausedRemainingMs: paper ? durationInSeconds * 1000 : null,
+                timerState: paper
+                    ? {
+                        timeRemaining: durationInSeconds,
+                        isRunning: false,
+                        startTime: null,
+                        finishTime: null
+                    }
+                    : createInitialTimerState()
+            };
+        }));
+    };
+
+    const handleAddMultiTimer = () => {
+        setMultiTimers(prevTimers => {
+            if (prevTimers.length >= 3) {
+                return prevTimers;
+            }
+
+            const nextTimer = createEmptyMultiTimer(nextMultiTimerIdRef.current);
+            nextMultiTimerIdRef.current += 1;
+            return [...prevTimers, nextTimer];
+        });
+    };
+
+    const handleRemoveMultiTimer = (timerId: number) => {
+        setMultiTimers(prevTimers => (
+            prevTimers.length <= 1
+                ? prevTimers
+                : prevTimers.filter(timer => timer.id !== timerId)
+        ));
+    };
+
+    const updateMultiTimer = (
+        timerId: number,
+        updater: (timer: MultiTimerSession) => MultiTimerSession
+    ) => {
+        setMultiTimers(prevTimers => prevTimers.map(timer => (
+            timer.id === timerId ? updater(timer) : timer
+        )));
+    };
+
+    const handleStartMultiTimer = (timerId: number) => {
+        updateMultiTimer(timerId, timer => {
+            if (!timer.selectedPaper || timer.selectedPaper.isListening || timer.timerState.timeRemaining <= 0) {
+                return timer;
+            }
+
+            if (timer.timerState.isRunning) {
+                const remainingMs = timer.timerState.finishTime
+                    ? Math.max(0, timer.timerState.finishTime.getTime() - Date.now())
+                    : Math.max(0, timer.timerState.timeRemaining * 1000);
+
+                return {
+                    ...timer,
+                    pausedRemainingMs: remainingMs,
+                    timerState: {
+                        ...timer.timerState,
+                        isRunning: false,
+                        finishTime: null,
+                        timeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                    }
+                };
+            }
+
+            if (!timer.timerState.startTime) {
+                const startTime = new Date();
+                const durationMs = timer.selectedPaper.durationMinutes * 60 * 1000;
+
+                return {
+                    ...timer,
+                    pausedRemainingMs: durationMs,
+                    timerState: {
+                        ...timer.timerState,
+                        isRunning: true,
+                        startTime,
+                        finishTime: new Date(startTime.getTime() + durationMs)
+                    }
+                };
+            }
+
+            const resumeRemainingMs = timer.pausedRemainingMs ?? (timer.timerState.timeRemaining * 1000);
+
+            return {
+                ...timer,
+                pausedRemainingMs: resumeRemainingMs,
+                timerState: {
+                    ...timer.timerState,
+                    isRunning: true,
+                    finishTime: new Date(Date.now() + resumeRemainingMs),
+                    timeRemaining: Math.max(0, Math.ceil(resumeRemainingMs / 1000))
+                }
+            };
+        });
+    };
+
+    const handleResetMultiTimer = (timerId: number) => {
+        updateMultiTimer(timerId, timer => {
+            if (!timer.selectedPaper || timer.selectedPaper.isListening) {
+                return timer;
+            }
+
+            const durationInSeconds = timer.selectedPaper.durationMinutes * 60;
+
+            return {
+                ...timer,
+                pausedRemainingMs: durationInSeconds * 1000,
+                timerState: {
+                    timeRemaining: durationInSeconds,
+                    isRunning: false,
+                    startTime: null,
+                    finishTime: null
+                }
+            };
+        });
+    };
+
+    const handleStartAllMultiTimers = () => {
+        multiTimers.forEach(timer => {
+            if (timer.selectedPaper && !timer.selectedPaper.isListening && !timer.timerState.isRunning) {
+                handleStartMultiTimer(timer.id);
+            }
+        });
+    };
+
+    const handlePauseAllMultiTimers = () => {
+        multiTimers.forEach(timer => {
+            if (timer.timerState.isRunning) {
+                handleStartMultiTimer(timer.id);
+            }
+        });
+    };
+
+    const handleResetAllMultiTimers = () => {
+        multiTimers.forEach(timer => handleResetMultiTimer(timer.id));
     };
 
     // Start timer function
@@ -328,8 +693,292 @@ const App: React.FC = () => {
         setIsTimerScreen(false);
     };
 
+    const hasReadyMultiTimer = multiTimers.every(timer => !!timer.selectedExam && !!timer.selectedPaper);
+    const canOpenTimerScreen = timerMode === 'single'
+        ? !!selectedExam && !!selectedPaper
+        : hasReadyMultiTimer;
+
     // Render timer screen (windowed by default, optionally browser fullscreen)
     if (isTimerScreen) {
+        if (timerMode === 'multiple') {
+            const readyTimers = multiTimers.filter(timer => timer.selectedExam && timer.selectedPaper);
+            const gridClasses = readyTimers.length === 1
+                ? 'grid-cols-1 max-w-5xl mx-auto'
+                : readyTimers.length === 2
+                    ? 'grid-cols-1 lg:grid-cols-2'
+                    : 'grid-cols-1 lg:grid-cols-3';
+
+            return (
+                <div
+                    className="h-screen h-[100dvh] bg-slate-100 relative overflow-hidden flex flex-col"
+                    role="application"
+                    aria-label="Multiple exam timer screen display"
+                >
+                    <Header
+                        isFullScreen={true}
+                        className="relative z-10"
+                        onBackToHome={handleBackToHomeScreen}
+                        onToggleFullscreen={handleToggleBrowserFullScreen}
+                        isFullscreenActive={isBrowserFullScreen}
+                        centreNumber={CENTRE_NUMBER}
+                    />
+
+                    <main className={`grid ${gridClasses} flex-1 min-h-0 gap-4 overflow-y-auto px-4 pt-4 pb-0 sm:px-6 sm:pt-6`}>
+                        {readyTimers.map((timer, index) => {
+                            const selectedTimerExam = timer.selectedExam as Exam;
+                            const selectedTimerPaper = timer.selectedPaper as Paper;
+                            const isComplete = !!timer.timerState.startTime
+                                && !timer.timerState.isRunning
+                                && timer.timerState.timeRemaining === 0;
+                            const startTime = timer.timerState.startTime ? formatTimeHHMM(timer.timerState.startTime) : '-';
+                            const finishTime = timer.timerState.finishTime ? formatTimeHHMM(timer.timerState.finishTime) : '-';
+                            const progressPercentage = selectedTimerPaper.durationMinutes > 0
+                                ? Math.min(100, Math.max(0, ((selectedTimerPaper.durationMinutes * 60 - timer.timerState.timeRemaining) / (selectedTimerPaper.durationMinutes * 60)) * 100))
+                                : 0;
+                            const accentClasses = readyTimers.length >= 2
+                                ? getDoubleTimerAccentClasses(selectedTimerExam.name)
+                                : {
+                                    text: 'text-blue-700',
+                                    bg: 'bg-blue-600',
+                                    border: 'border-blue-500',
+                                    chip: 'bg-blue-50'
+                                };
+                            const tabClasses = readyTimers.length === 3
+                                ? 'min-w-[clamp(7.5rem,10vw,11rem)] rounded-b-[1.2rem] px-7 pb-2 pt-2.5 text-[clamp(0.95rem,1.05vw,1.25rem)]'
+                                : 'min-w-[clamp(9rem,14vw,15rem)] rounded-b-[1.4rem] px-10 pb-2.5 pt-3 text-[clamp(1.05rem,1.35vw,1.6rem)]';
+                            const timerTextClasses = readyTimers.length === 3
+                                ? 'text-[clamp(5.25rem,7.8vw,9.2rem)]'
+                                : 'text-[clamp(5.75rem,9vw,12rem)]';
+                            const listeningIconClasses = readyTimers.length === 3
+                                ? 'text-[clamp(6rem,9vw,11rem)]'
+                                : 'text-[clamp(7rem,12vw,14rem)]';
+                            const progressClasses = readyTimers.length === 3
+                                ? 'mt-5 h-8'
+                                : 'mt-6 h-8';
+                            const timeRowClasses = readyTimers.length === 3
+                                ? 'mt-5 mb-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3'
+                                : 'mt-6 mb-5 grid grid-cols-[1fr_auto_1fr] items-baseline gap-6 text-center';
+                            const timeLabelClasses = readyTimers.length === 3
+                                ? 'text-[clamp(0.95rem,1.05vw,1.25rem)] leading-[1.05]'
+                                : 'mr-4 text-[clamp(1.05rem,1.25vw,1.5rem)]';
+                            const timeValueClasses = readyTimers.length === 3
+                                ? 'text-[clamp(1.85rem,2.15vw,2.8rem)]'
+                                : 'text-[clamp(1.8rem,2.25vw,3rem)]';
+                            const infoGridClasses = readyTimers.length === 3
+                                ? 'grid-cols-[clamp(7rem,7.8vw,9rem)_minmax(0,1fr)] pt-4'
+                                : 'grid-cols-[clamp(8rem,10vw,12rem)_minmax(0,1fr)] pt-4';
+                            const infoLabelClasses = readyTimers.length === 3
+                                ? 'text-[clamp(1rem,1.1vw,1.3rem)]'
+                                : 'text-[clamp(1.05rem,1.25vw,1.5rem)]';
+                            const infoValueClasses = readyTimers.length === 3
+                                ? 'text-[clamp(1.35rem,1.6vw,2rem)]'
+                                : 'text-[clamp(1.4rem,1.9vw,2.5rem)]';
+                            const infoRowPadding = readyTimers.length === 3 ? 'py-3' : 'py-3';
+                            const timerDisplayText = readyTimers.length === 3
+                                ? formatFourDigitTimerDisplay(timer.timerState.timeRemaining)
+                                : formatTimerDisplay(timer.timerState.timeRemaining);
+
+                            if (readyTimers.length >= 2) {
+                                return (
+                                    <section
+                                        key={timer.id}
+                                        className="relative flex min-h-[32rem] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white/95 p-5 pt-14 shadow-sm"
+                                        aria-label={`Timer ${index + 1}`}
+                                    >
+                                        <div className="absolute left-1/2 top-0 flex -translate-x-1/2 justify-center">
+                                            <div className={`${tabClasses} ${accentClasses.chip} text-center font-bold uppercase tracking-[0.06em] ${accentClasses.text} shadow-sm`}>
+                                                Exam {index + 1}
+                                            </div>
+                                        </div>
+
+                                        {selectedTimerPaper.isListening ? (
+                                            <div className="flex flex-1 items-center justify-center text-center">
+                                                <div className={`${listeningIconClasses} leading-none`} aria-label="Listening test">
+                                                    {'\u{1F3A7}'}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className={`flex flex-1 flex-col ${readyTimers.length === 3 ? 'justify-start pt-6' : 'justify-center'}`}>
+                                                <div className={`text-center font-mono ${timerTextClasses} font-bold leading-none tracking-[0.04em] text-slate-900`}>
+                                                    {isComplete ? "Time's Up!" : timerDisplayText}
+                                                </div>
+
+                                                <div className={`${progressClasses} overflow-hidden rounded-full border-2 ${accentClasses.border} bg-white`}>
+                                                    <div
+                                                        className={`h-full rounded-full ${accentClasses.bg} transition-all duration-1000 ease-linear`}
+                                                        style={{ width: `${progressPercentage}%` }}
+                                                    />
+                                                </div>
+
+                                                <div className={timeRowClasses}>
+                                                    <div className={readyTimers.length === 3 ? 'grid grid-cols-[max-content_max-content] items-center justify-center gap-x-3' : undefined}>
+                                                        <span className={`${timeLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                            {readyTimers.length === 3 ? (
+                                                                <>
+                                                                    Start<br />
+                                                                    Time:
+                                                                </>
+                                                            ) : (
+                                                                'Start Time:'
+                                                            )}
+                                                        </span>
+                                                        <span className={`font-mono ${timeValueClasses} font-bold leading-none text-slate-900`}>
+                                                            {startTime}
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-10 w-px bg-slate-300" aria-hidden="true" />
+                                                    <div className={readyTimers.length === 3 ? 'grid grid-cols-[max-content_max-content] items-center justify-center gap-x-3' : undefined}>
+                                                        <span className={`${timeLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                            {readyTimers.length === 3 ? (
+                                                                <>
+                                                                    Finish<br />
+                                                                    Time:
+                                                                </>
+                                                            ) : (
+                                                                'Finish Time:'
+                                                            )}
+                                                        </span>
+                                                        <span className={`font-mono ${timeValueClasses} font-bold leading-none text-slate-900`}>
+                                                            {finishTime}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className={`grid ${infoGridClasses} border-t border-slate-300`}>
+                                            <div className={`border-b border-slate-200 ${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                Exam:
+                                            </div>
+                                            <div className={`border-b border-slate-200 ${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
+                                                {selectedTimerExam.name}
+                                            </div>
+
+                                            <div className={`border-b border-slate-200 ${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                Paper:
+                                            </div>
+                                            <div className={`border-b border-slate-200 ${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
+                                                {selectedTimerPaper.name}
+                                            </div>
+
+                                            <div className={`${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                Duration:
+                                            </div>
+                                            <div className={`${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
+                                                {formatDuration(selectedTimerPaper.durationMinutes)}
+                                            </div>
+                                        </div>
+                                    </section>
+                                );
+                            }
+
+                            return (
+                                <section
+                                    key={timer.id}
+                                    className="flex min-h-[28rem] flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+                                    aria-label={`Timer ${index + 1}`}
+                                >
+                                    <div className="grid flex-none grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-slate-200 pb-3">
+                                        <div className="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
+                                            <div className="text-[clamp(0.95rem,1vw,1.15rem)] font-semibold uppercase tracking-[0.08em] text-blue-700">
+                                                Exam:
+                                            </div>
+                                            <h2 className="min-w-0 text-[clamp(1.35rem,1.8vw,2.35rem)] font-bold leading-tight text-slate-800">
+                                                {selectedTimerExam.name}
+                                            </h2>
+
+                                            <div className="text-[clamp(0.95rem,1vw,1.15rem)] font-semibold uppercase tracking-[0.08em] text-blue-700">
+                                                Paper:
+                                            </div>
+                                            <div className="min-w-0 text-[clamp(1.15rem,1.45vw,1.9rem)] font-semibold leading-tight text-slate-700">
+                                                {selectedTimerPaper.name}
+                                            </div>
+
+                                            <div className="text-[clamp(0.95rem,1vw,1.15rem)] font-semibold uppercase tracking-[0.08em] text-blue-700">
+                                                Duration:
+                                            </div>
+                                            <div className="text-[clamp(1.3rem,1.7vw,2.2rem)] font-bold leading-tight text-slate-800">
+                                                {formatDuration(selectedTimerPaper.durationMinutes)}
+                                            </div>
+                                        </div>
+
+                                        <div className="grid shrink-0 grid-cols-[max-content_max-content] items-baseline gap-x-3 gap-y-1">
+                                            <div className="text-[clamp(0.95rem,1vw,1.15rem)] font-semibold uppercase tracking-[0.08em] text-blue-700">
+                                                Start:
+                                            </div>
+                                            <div className="font-mono text-[clamp(1.4rem,1.75vw,2.4rem)] font-bold leading-none text-slate-800">
+                                                {startTime}
+                                            </div>
+                                            <div className="text-[clamp(0.95rem,1vw,1.15rem)] font-semibold uppercase tracking-[0.08em] text-blue-700">
+                                                Finish:
+                                            </div>
+                                            <div className="font-mono text-[clamp(1.4rem,1.75vw,2.4rem)] font-bold leading-none text-slate-800">
+                                                {finishTime}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {selectedTimerPaper.isListening ? (
+                                        <div className="flex flex-1 items-center justify-center text-center">
+                                            <div className="text-[clamp(2.25rem,4vw,5rem)] font-bold text-slate-700">
+                                                {'\u{1F3A7} Listening Test'}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex min-h-0 flex-1 items-center justify-center py-2">
+                                                <TimerDisplay
+                                                    timeRemaining={timer.timerState.timeRemaining}
+                                                    totalTime={selectedTimerPaper.durationMinutes * 60}
+                                                    isFullScreen={true}
+                                                    isComplete={isComplete}
+                                                    className="max-h-full"
+                                                >
+                                                    <TimerControls
+                                                        onStart={() => handleStartMultiTimer(timer.id)}
+                                                        onPause={() => handleStartMultiTimer(timer.id)}
+                                                        onReset={() => handleResetMultiTimer(timer.id)}
+                                                        isRunning={timer.timerState.isRunning}
+                                                        isFullScreen={true}
+                                                        className="shrink-0"
+                                                    />
+                                                </TimerDisplay>
+                                            </div>
+                                        </>
+                                    )}
+                                </section>
+                            );
+                        })}
+                    </main>
+
+                    <div className="flex h-[clamp(4.5rem,7vh,5.5rem)] flex-none items-center justify-center gap-[clamp(0.75rem,2vmin,2rem)] px-4">
+                        <button
+                            type="button"
+                            onClick={handleToggleAllMultiTimers}
+                            className={`inline-flex h-[clamp(2.75rem,7vmin,5rem)] w-[clamp(2.75rem,7vmin,5rem)] items-center justify-center rounded-lg text-white shadow-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                                hasRunningMultiTimer
+                                    ? 'bg-red-500 hover:bg-red-600 focus:ring-red-500'
+                                    : 'bg-emerald-500 hover:bg-emerald-600 focus:ring-emerald-500'
+                            }`}
+                            aria-label={hasRunningMultiTimer ? 'Pause all timers' : 'Start all timers'}
+                            title={hasRunningMultiTimer ? 'Pause all timers' : 'Start all timers'}
+                        >
+                            {hasRunningMultiTimer ? <PauseIcon size={24} /> : <PlayIcon size={24} />}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleResetAllMultiTimers}
+                            className="inline-flex h-[clamp(2.75rem,7vmin,5rem)] w-[clamp(2.75rem,7vmin,5rem)] items-center justify-center rounded-lg bg-slate-500 text-white shadow-md transition-colors hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+                            aria-label="Reset all timers"
+                            title="Reset all timers"
+                        >
+                            <ResetIcon size={24} />
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div 
                 className="h-screen h-[100dvh] bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden flex flex-col"
@@ -349,6 +998,7 @@ const App: React.FC = () => {
                     onBackToHome={handleBackToHomeScreen}
                     onToggleFullscreen={handleToggleBrowserFullScreen}
                     isFullscreenActive={isBrowserFullScreen}
+                    centreNumber={CENTRE_NUMBER}
                 />
 
                 <div className="relative z-10 flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
@@ -443,7 +1093,7 @@ const App: React.FC = () => {
                 Skip to main content
             </a>
             
-            <Header />
+            <Header centreNumber={CENTRE_NUMBER} />
             
             {/* Main Content */}
             <main id="main-content" className="max-w-4xl mx-auto p-4 sm:p-6">
@@ -459,45 +1109,152 @@ const App: React.FC = () => {
                     {/* Exam Selection */}
                     <div className="space-y-4 sm:space-y-6">
                         <div>
-                            <label htmlFor="exam-select" className="block text-sm font-medium text-slate-700 mb-2">
-                                Select Exam
-                            </label>
-                            <Dropdown
-                                id="exam-select"
-                                options={examOptions}
-                                submenuLabel="Multiple Exams"
-                                submenuOptions={multipleExamOptions}
-                                value={selectedExam?.name || ''}
-                                onChange={handleExamSelect}
-                                placeholder="Choose an exam..."
-                                aria-label="Select Cambridge exam"
-                            />
+                            <div className="block text-sm font-medium text-slate-700 mb-2">
+                                Timer Mode
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setTimerMode('single')}
+                                    className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                        timerMode === 'single'
+                                            ? 'bg-white text-blue-700 shadow-sm'
+                                            : 'text-slate-600 hover:bg-white/70'
+                                    }`}
+                                >
+                                    Single Timer
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setTimerMode('multiple')}
+                                    className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                        timerMode === 'multiple'
+                                            ? 'bg-white text-blue-700 shadow-sm'
+                                            : 'text-slate-600 hover:bg-white/70'
+                                    }`}
+                                >
+                                    Multiple Timers
+                                </button>
+                            </div>
                         </div>
 
-                        <div>
-                            <label htmlFor="paper-select" className="block text-sm font-medium text-slate-700 mb-2">
-                                Select Paper
-                            </label>
-                            <Dropdown
-                                id="paper-select"
-                                options={paperOptions}
-                                value={selectedPaper?.name || ''}
-                                onChange={handlePaperSelect}
-                                disabled={!selectedExam}
-                                placeholder={selectedExam ? "Choose a paper..." : "Select an exam first"}
-                                aria-label="Select exam paper"
-                            />
-                        </div>
+                        {timerMode === 'single' ? (
+                            <>
+                                <div>
+                                    <label htmlFor="exam-select" className="block text-sm font-medium text-slate-700 mb-2">
+                                        Select Exam
+                                    </label>
+                                    <Dropdown
+                                        id="exam-select"
+                                        options={directExamOptions}
+                                        optionGroups={examOptionGroups}
+                                        value={selectedExam?.name || ''}
+                                        onChange={handleExamSelect}
+                                        placeholder="Choose an exam..."
+                                        aria-label="Select Cambridge exam"
+                                    />
+                                </div>
 
-                        {/* Exam Information Preview */}
-                        {selectedExam && selectedPaper && (
-                            <div className="mt-6 sm:mt-8 space-y-4">
-                                <ExamInfoDisplay
-                                    selectedExam={selectedExam}
-                                    selectedPaper={selectedPaper}
-                                    timerState={timerState}
-                                    isFullScreen={false}
-                                />
+                                <div>
+                                    <label htmlFor="paper-select" className="block text-sm font-medium text-slate-700 mb-2">
+                                        Select Paper
+                                    </label>
+                                    <Dropdown
+                                        id="paper-select"
+                                        options={paperOptions}
+                                        value={selectedPaper?.name || ''}
+                                        onChange={handlePaperSelect}
+                                        disabled={!selectedExam}
+                                        placeholder={selectedExam ? "Choose a paper..." : "Select an exam first"}
+                                        aria-label="Select exam paper"
+                                    />
+                                </div>
+
+                                {/* Exam Information Preview */}
+                                {selectedExam && selectedPaper && (
+                                    <div className="mt-6 sm:mt-8 space-y-4">
+                                        <ExamInfoDisplay
+                                            selectedExam={selectedExam}
+                                            selectedPaper={selectedPaper}
+                                            timerState={timerState}
+                                            isFullScreen={false}
+                                            showTimes={false}
+                                        />
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div className="space-y-4">
+                                {multiTimers.map((timer, index) => {
+                                    const multiPaperOptions = timer.selectedExam
+                                        ? timer.selectedExam.papers.map(paper => paper.name)
+                                        : [];
+
+                                    return (
+                                        <section
+                                            key={timer.id}
+                                            className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                                            aria-label={`Timer ${index + 1} setup`}
+                                        >
+                                            <div className="mb-3 flex items-center justify-between gap-3">
+                                                <h3 className="text-base font-semibold text-slate-800">
+                                                    Timer {index + 1}
+                                                </h3>
+                                                {multiTimers.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveMultiTimer(timer.id)}
+                                                        className="rounded-md px-3 py-1 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="grid gap-4 md:grid-cols-2">
+                                                <div>
+                                                    <label htmlFor={`multi-exam-${timer.id}`} className="block text-sm font-medium text-slate-700 mb-2">
+                                                        Select Exam
+                                                    </label>
+                                                    <Dropdown
+                                                        id={`multi-exam-${timer.id}`}
+                                                        options={directExamOptions}
+                                                        optionGroups={examOptionGroups}
+                                                        value={timer.selectedExam?.name || ''}
+                                                        onChange={(examName) => handleMultiExamSelect(timer.id, examName)}
+                                                        placeholder="Choose an exam..."
+                                                        aria-label={`Select exam for timer ${index + 1}`}
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label htmlFor={`multi-paper-${timer.id}`} className="block text-sm font-medium text-slate-700 mb-2">
+                                                        Select Paper
+                                                    </label>
+                                                    <Dropdown
+                                                        id={`multi-paper-${timer.id}`}
+                                                        options={multiPaperOptions}
+                                                        value={timer.selectedPaper?.name || ''}
+                                                        onChange={(paperName) => handleMultiPaperSelect(timer.id, paperName)}
+                                                        disabled={!timer.selectedExam}
+                                                        placeholder={timer.selectedExam ? "Choose a paper..." : "Select an exam first"}
+                                                        aria-label={`Select paper for timer ${index + 1}`}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </section>
+                                    );
+                                })}
+
+                                {multiTimers.length < 3 && (
+                                    <button
+                                        type="button"
+                                        onClick={handleAddMultiTimer}
+                                        className="w-full rounded-lg border border-dashed border-blue-300 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                                    >
+                                        + Add Timer
+                                    </button>
+                                )}
                             </div>
                         )}
 
@@ -505,7 +1262,7 @@ const App: React.FC = () => {
                             <button
                                 type="button"
                                 onClick={handleOpenTimerScreen}
-                                disabled={!selectedExam || !selectedPaper}
+                                disabled={!canOpenTimerScreen}
                                 className="w-full inline-flex items-center justify-center px-4 py-3 text-base font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                 aria-label="Go to timer screen"
                                 title="Go to timer screen"

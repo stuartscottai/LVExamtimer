@@ -7,13 +7,15 @@ interface ExamInfoDisplayProps {
   selectedPaper: Paper | null;
   timerState: TimerState;
   isFullScreen?: boolean;
+  showTimes?: boolean;
 }
 
 const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
   selectedExam,
   selectedPaper,
   timerState,
-  isFullScreen = false
+  isFullScreen = false,
+  showTimes = true
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -147,12 +149,16 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
     : 'text-lg font-mono font-semibold text-slate-800';
 
   const sectionSpacingClasses = isFullScreen
-    ? 'grid w-full grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-[0.42em] gap-y-[0.72em]'
+    ? 'grid w-full grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-[0.42em] gap-y-[0.44em]'
     : 'grid grid-cols-1 gap-y-4 sm:grid-cols-[max-content_minmax(0,1fr)] sm:items-baseline sm:gap-x-4';
 
   const itemClasses = isFullScreen
     ? 'contents'
     : 'contents';
+
+  const dividerClasses = isFullScreen
+    ? 'col-span-2 h-px bg-slate-300/70'
+    : 'hidden';
 
   const fullScreenStyles = isFullScreen
     ? {
@@ -192,48 +198,57 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
           </div>
           <div className={valueClasses} aria-labelledby="centre-label">ES750</div>
         </div>
+        {isFullScreen && <div className={dividerClasses} aria-hidden="true" />}
 
         {/* Exam Name */}
         <div className={itemClasses}>
           <div className={labelClasses} id="exam-label">Exam:</div>
           <div className={valueClasses} aria-labelledby="exam-label">{selectedExam.name}</div>
         </div>
+        {isFullScreen && <div className={dividerClasses} aria-hidden="true" />}
 
         {/* Paper Name */}
         <div className={itemClasses}>
           <div className={labelClasses} id="paper-label">Paper:</div>
           <div className={valueClasses} aria-labelledby="paper-label">{selectedPaper.name}</div>
         </div>
+        {isFullScreen && <div className={dividerClasses} aria-hidden="true" />}
 
         {/* Duration */}
         <div className={itemClasses}>
           <div className={labelClasses} id="duration-label">Duration:</div>
           <div className={valueClasses} aria-labelledby="duration-label">{durationFormatted}</div>
         </div>
+        {isFullScreen && showTimes && <div className={dividerClasses} aria-hidden="true" />}
 
         {/* Start Time */}
-        <div className={itemClasses}>
-          <div className={labelClasses} id="start-label">Start Time:</div>
-          <div
-            className={timeClasses}
-            aria-labelledby="start-label"
-            aria-live="polite"
-          >
-            {startTimeFormatted || (isFullScreen ? '-' : '')}
+        {showTimes && (
+          <div className={itemClasses}>
+            <div className={labelClasses} id="start-label">Start Time:</div>
+            <div
+              className={timeClasses}
+              aria-labelledby="start-label"
+              aria-live="polite"
+            >
+              {startTimeFormatted || (isFullScreen ? '-' : '')}
+            </div>
           </div>
-        </div>
+        )}
+        {isFullScreen && showTimes && <div className={dividerClasses} aria-hidden="true" />}
 
         {/* Finish Time */}
-        <div className={itemClasses}>
-          <div className={labelClasses} id="finish-label">Finish Time:</div>
-          <div
-            className={timeClasses}
-            aria-labelledby="finish-label"
-            aria-live="polite"
-          >
-            {finishTimeFormatted || (isFullScreen ? '-' : '')}
+        {showTimes && (
+          <div className={itemClasses}>
+            <div className={labelClasses} id="finish-label">Finish Time:</div>
+            <div
+              className={timeClasses}
+              aria-labelledby="finish-label"
+              aria-live="polite"
+            >
+              {finishTimeFormatted || (isFullScreen ? '-' : '')}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ interface HeaderProps {
   onBackToHome?: () => void;
   onToggleFullscreen?: () => void;
   isFullscreenActive?: boolean;
+  centreNumber?: string;
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -14,18 +15,33 @@ const Header: React.FC<HeaderProps> = ({
   isFullScreen = false,
   onBackToHome,
   onToggleFullscreen,
-  isFullscreenActive = false
+  isFullscreenActive = false,
+  centreNumber
 }) => {
+  const centreNumberBlock = centreNumber ? (
+    <div className="border-l border-white/70 pl-6">
+      <div className="text-sm font-semibold uppercase tracking-[0.06em] text-white/90">
+        Centre Number:
+      </div>
+      <div className="text-3xl font-bold leading-tight tracking-[0.02em]">
+        {centreNumber}
+      </div>
+    </div>
+  ) : null;
+
   if (isFullScreen) {
     return (
       <header className={`bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-3 sm:py-4 px-4 sm:px-6 lg:px-8 shadow-xl ${className}`}>
         <div className="w-full flex items-center justify-between">
-          <LenguasVivasLogo size={140} />
+          <div className="flex items-center gap-6">
+            <LenguasVivasLogo size={140} />
+            {centreNumberBlock}
+          </div>
           <div className="flex flex-col items-center gap-2">
             <button
               type="button"
               onClick={onBackToHome}
-              className="inline-flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-white/70"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/15 text-white transition-colors hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/70"
               aria-label="Back to home screen"
               title="Back to home screen"
             >
@@ -49,7 +65,7 @@ const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onToggleFullscreen}
-              className="inline-flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-white/70"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/15 text-white transition-colors hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/70"
               aria-label={isFullscreenActive ? 'Exit full-screen mode' : 'Enter full-screen mode'}
               title={isFullscreenActive ? 'Exit full-screen mode' : 'Enter full-screen mode'}
             >
@@ -83,8 +99,11 @@ const Header: React.FC<HeaderProps> = ({
   return (
     <header className={`bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-6 px-6 shadow-xl ${className}`}>
       <div className="max-w-6xl mx-auto flex items-center justify-between">
-        {/* Lenguas Vivas Logo */}
-        <LenguasVivasLogo size={160} />
+        <div className="flex items-center gap-6">
+          {/* Lenguas Vivas Logo */}
+          <LenguasVivasLogo size={160} />
+          {centreNumberBlock}
+        </div>
         
         {/* Title */}
         <div className="text-right">
