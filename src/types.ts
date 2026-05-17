@@ -13,9 +13,12 @@ export interface Exam {
 
 export interface TimerState {
   timeRemaining: number; // in seconds
+  extraTimeRemaining: number; // in seconds
   isRunning: boolean;
   startTime: Date | null;
   finishTime: Date | null;
+  extraFinishTime: Date | null;
+  phase: 'standard' | 'extra' | 'complete';
 }
 
 export interface AppState {

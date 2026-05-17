@@ -52,16 +52,24 @@ export function calculateFinishTime(startTime: Date, durationMinutes: number): D
  * @returns Formatted duration string (e.g., "1 hour 30 minutes" or "45 minutes")
  */
 export function formatDuration(minutes: number): string {
-  if (minutes < 60) {
-    return `${minutes} minutes`;
+  const totalSeconds = Math.round(minutes * 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const remainingSecondsAfterHours = totalSeconds % 3600;
+  const wholeMinutes = Math.floor(remainingSecondsAfterHours / 60);
+  const seconds = remainingSecondsAfterHours % 60;
+  const parts: string[] = [];
+
+  if (hours > 0) {
+    parts.push(`${hours} hour${hours > 1 ? 's' : ''}`);
   }
-  
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  
-  if (remainingMinutes === 0) {
-    return `${hours} hour${hours > 1 ? 's' : ''}`;
+
+  if (wholeMinutes > 0) {
+    parts.push(`${wholeMinutes} minute${wholeMinutes > 1 ? 's' : ''}`);
   }
-  
-  return `${hours} hour${hours > 1 ? 's' : ''} ${remainingMinutes} minutes`;
+
+  if (seconds > 0) {
+    parts.push(`${seconds} second${seconds > 1 ? 's' : ''}`);
+  }
+
+  return parts.length > 0 ? parts.join(' ') : '0 minutes';
 }

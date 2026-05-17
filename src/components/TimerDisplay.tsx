@@ -6,6 +6,7 @@ interface TimerDisplayProps {
   totalTime?: number; // total time in seconds for progress calculation
   isFullScreen?: boolean;
   isComplete?: boolean;
+  completeLabel?: string;
   className?: string;
   children?: React.ReactNode;
 }
@@ -15,6 +16,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
   totalTime = 0,
   isFullScreen = false,
   isComplete = false,
+  completeLabel = "Time's Up!",
   className = '',
   children
 }) => {
@@ -35,7 +37,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
   const formattedTime = hours > 0
     ? formatTime(timeRemaining)
     : `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  const displayText = isComplete ? "Time's Up!" : formattedTime;
+  const displayText = isComplete ? completeLabel : formattedTime;
   
   // Calculate progress percentage (how much time has elapsed)
   const progressPercentage = totalTime > 0 ? ((totalTime - timeRemaining) / totalTime) * 100 : 0;
@@ -47,7 +49,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     if (minutes > 0) description += `${minutes} minute${minutes !== 1 ? 's' : ''} `;
     if (seconds > 0 || timeRemaining === 0) description += `${seconds} second${seconds !== 1 ? 's' : ''}`;
     
-    return isComplete ? "Time's up" : description.trim() + ' remaining';
+    return isComplete ? completeLabel : description.trim() + ' remaining';
   };
 
   useEffect(() => {
@@ -80,7 +82,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
       }
 
       const circleSize = Math.min(circle.clientWidth, circle.clientHeight);
-      const safeInnerRadius = circleSize * 0.42;
+      const safeInnerRadius = circleSize * (isComplete ? 0.34 : 0.42);
 
       if (!circleSize || !safeInnerRadius) {
         return;
@@ -96,7 +98,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
       }
 
       const diagonal = Math.sqrt((naturalWidth * naturalWidth) + (naturalHeight * naturalHeight));
-      const nextScale = ((2 * safeInnerRadius) / diagonal) * 0.992;
+      const nextScale = ((2 * safeInnerRadius) / diagonal) * (isComplete ? 0.94 : 0.992);
 
       setTextScale(previousScale => (
         Math.abs(previousScale - nextScale) > 0.01 ? nextScale : previousScale
@@ -124,7 +126,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
       resizeObserver?.disconnect();
       window.removeEventListener('resize', scheduleFit);
     };
-  }, [isFullScreen, displayText]);
+  }, [isFullScreen, displayText, isComplete]);
 
   if (isFullScreen) {
     // Circular timer design for full screen - match the reference layout
@@ -136,7 +138,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
     return (
       <div 
-        className={`w-full h-full min-h-0 flex flex-col items-center justify-center p-1 sm:p-2 cursor-default select-none ${className}`}
+        className={`relative w-full h-full min-h-0 flex flex-col items-center justify-center p-1 sm:p-2 cursor-default select-none ${className}`}
         role="timer"
         aria-live="polite"
         aria-label={getTimeDescription()}
@@ -182,7 +184,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
             >
               <div
                 ref={fullScreenTextRef}
-                className={`font-bold tabular-nums whitespace-nowrap ${isComplete || isLowTime ? 'text-red-500' : 'text-gray-700'} ${isLowTime && !isComplete ? 'pulse-urgency' : ''} ${isComplete ? 'font-sans' : 'font-mono'} text-[16rem] leading-none`}
+                className={`font-bold tabular-nums whitespace-nowrap text-center ${isComplete || isLowTime ? 'text-red-500' : 'text-gray-700'} ${isLowTime && !isComplete ? 'pulse-urgency' : ''} ${isComplete ? 'font-sans text-[6.5rem]' : 'font-mono text-[16rem]'} leading-none`}
                 style={{
                   transform: `scale(${textScale})`,
                   transformOrigin: 'center center'
@@ -195,7 +197,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
         </div>
 
         {children && (
-          <div className="flex flex-none justify-center pt-[clamp(0.25rem,1.5vmin,1rem)]">
+          <div className="flex flex-none flex-col items-center justify-center pt-[clamp(0.25rem,1.5vmin,1rem)]">
             {children}
           </div>
         )}
@@ -212,7 +214,7 @@ const TimerDisplay: React.FC<TimerDisplayProps> = ({
     transition-colors duration-300
   `;
   
-  const sizeClasses = 'text-4xl md:text-5xl';
+  const sizeClasses = isComplete ? 'text-3xl md:text-4xl' : 'text-4xl md:text-5xl';
   const urgencyClasses = isLowTime ? 'text-red-500 pulse-urgency' : 'text-slate-700';
   
   return (

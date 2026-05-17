@@ -87,6 +87,12 @@ export const CAMBRIDGE_EXAMS: Exam[] = [
       { name: "Writing", durationMinutes: 90 },
       { name: "Listening", durationMinutes: 40, isListening: true }
     ]
+  },
+  {
+    name: "1 minute TEST",
+    papers: [
+      { name: "Timer Finish Test", durationMinutes: 1 }
+    ]
   }
 ];
 

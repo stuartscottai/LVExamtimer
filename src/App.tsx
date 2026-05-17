@@ -1,35 +1,75 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, PauseIcon, PlayIcon, ResetIcon } from './components';
+import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, ExpandToggleIcon, PauseIcon, PlayIcon, ResetIcon } from './components';
 import { CAMBRIDGE_EXAMS, CENTRE_NUMBER, MULTIPLE_EXAM_OPTIONS } from './constants';
 import { Exam, Paper, TimerState } from './types';
 import { formatDuration, formatTime, formatTimeHHMM } from './utils';
 import './index.css';
 
 type TimerMode = 'single' | 'multiple';
+type ExtraTimePercent = 0 | 25 | 50 | 100;
 
 interface MultiTimerSession {
     id: number;
     selectedExam: Exam | null;
     selectedPaper: Paper | null;
+    extraTimePercent: ExtraTimePercent;
     timerState: TimerState;
     pausedRemainingMs: number | null;
 }
 
 const createInitialTimerState = (): TimerState => ({
     timeRemaining: 0,
+    extraTimeRemaining: 0,
     isRunning: false,
     startTime: null,
-    finishTime: null
+    finishTime: null,
+    extraFinishTime: null,
+    phase: 'standard'
 });
 
 const createEmptyMultiTimer = (id: number): MultiTimerSession => ({
     id,
     selectedExam: null,
     selectedPaper: null,
+    extraTimePercent: 0,
     timerState: createInitialTimerState(),
     pausedRemainingMs: null
 });
+
+const EXTRA_TIME_OPTIONS: Array<{ label: string; value: ExtraTimePercent }> = [
+    { label: 'No extra time', value: 0 },
+    { label: '25% extra time', value: 25 },
+    { label: '50% extra time', value: 50 },
+    { label: '100% extra time', value: 100 }
+];
+
+const getExtraTimeLabel = (percent: ExtraTimePercent): string => (
+    EXTRA_TIME_OPTIONS.find(option => option.value === percent)?.label || EXTRA_TIME_OPTIONS[0].label
+);
+
+const getExtraTimePercentFromLabel = (label: string): ExtraTimePercent => (
+    EXTRA_TIME_OPTIONS.find(option => option.label === label)?.value ?? 0
+);
+
+const getOfficialDurationSeconds = (paper: Paper): number => (
+    Math.round(paper.durationMinutes * 60)
+);
+
+const getExtraTimeSeconds = (paper: Paper, extraTimePercent: ExtraTimePercent): number => (
+    Math.round(paper.durationMinutes * 60 * (extraTimePercent / 100))
+);
+
+const getDisplayPaper = (paper: Paper | null): Paper | null => {
+    if (!paper) {
+        return null;
+    }
+
+    return {
+        ...paper,
+        durationMinutes: paper.durationMinutes
+    };
+};
 
 const getDoubleTimerAccentClasses = (examName: string) => {
     if (examName.includes('Key')) {
@@ -112,6 +152,7 @@ const formatFourDigitTimerDisplay = (seconds: number): string => {
 const App: React.FC = () => {
     const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
     const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
+    const [extraTimePercent, setExtraTimePercent] = useState<ExtraTimePercent>(0);
     const [timerState, setTimerState] = useState<TimerState>(createInitialTimerState());
     const [timerMode, setTimerMode] = useState<TimerMode>('single');
     const [multiTimers, setMultiTimers] = useState<MultiTimerSession[]>([
@@ -119,6 +160,8 @@ const App: React.FC = () => {
     ]);
     const [isTimerScreen, setIsTimerScreen] = useState(false);
     const [isBrowserFullScreen, setIsBrowserFullScreen] = useState(false);
+    const [isSingleExtraTimeExpanded, setIsSingleExtraTimeExpanded] = useState(false);
+    const [expandedMultiExtraTimerIds, setExpandedMultiExtraTimerIds] = useState<number[]>([]);
 
     // Timer interval reference
     const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -173,39 +216,63 @@ const App: React.FC = () => {
             }
         };
 
-        if (!timerState.isRunning || !timerState.finishTime) {
+        if (!timerState.isRunning || (timerState.phase === 'standard' ? !timerState.finishTime : !timerState.extraFinishTime)) {
             clearTimerInterval();
             return clearTimerInterval;
         }
 
         const syncTimerToClock = () => {
             setTimerState(prevState => {
-                if (!prevState.isRunning || !prevState.finishTime) {
+                const activeFinishTime = prevState.phase === 'extra'
+                    ? prevState.extraFinishTime
+                    : prevState.finishTime;
+
+                if (!prevState.isRunning || !activeFinishTime) {
                     return prevState;
                 }
 
-                const remainingMs = Math.max(0, prevState.finishTime.getTime() - Date.now());
+                const remainingMs = Math.max(0, activeFinishTime.getTime() - Date.now());
                 pausedRemainingMsRef.current = remainingMs;
                 const newTimeRemaining = Math.max(0, Math.ceil(remainingMs / 1000));
 
                 if (newTimeRemaining <= 0) {
-                    clearTimerInterval();
+                    if (prevState.phase === 'standard' && prevState.extraTimeRemaining > 0) {
+                        const extraDurationMs = prevState.extraTimeRemaining * 1000;
+                        return {
+                            ...prevState,
+                            timeRemaining: 0,
+                            isRunning: true,
+                            extraFinishTime: new Date(Date.now() + extraDurationMs),
+                            phase: 'extra'
+                        };
+                    }
 
                     return {
                         ...prevState,
                         timeRemaining: 0,
-                        isRunning: false
+                        extraTimeRemaining: 0,
+                        isRunning: false,
+                        phase: 'complete'
                     };
                 }
 
-                if (newTimeRemaining === prevState.timeRemaining) {
+                const currentDisplayedRemaining = prevState.phase === 'extra'
+                    ? prevState.extraTimeRemaining
+                    : prevState.timeRemaining;
+
+                if (newTimeRemaining === currentDisplayedRemaining) {
                     return prevState;
                 }
 
-                return {
-                    ...prevState,
-                    timeRemaining: newTimeRemaining
-                };
+                return prevState.phase === 'extra'
+                    ? {
+                        ...prevState,
+                        extraTimeRemaining: newTimeRemaining
+                    }
+                    : {
+                        ...prevState,
+                        timeRemaining: newTimeRemaining
+                    };
             });
         };
 
@@ -213,9 +280,12 @@ const App: React.FC = () => {
         timerIntervalRef.current = setInterval(syncTimerToClock, 250);
 
         return clearTimerInterval;
-    }, [timerState.isRunning, timerState.finishTime]);
+    }, [timerState.isRunning, timerState.finishTime, timerState.extraFinishTime, timerState.phase]);
 
-    const hasRunningMultiTimer = multiTimers.some(timer => timer.timerState.isRunning && timer.timerState.finishTime);
+    const hasRunningMultiTimer = multiTimers.some(timer => (
+        timer.timerState.isRunning
+        && (timer.timerState.phase === 'standard' ? timer.timerState.finishTime : timer.timerState.extraFinishTime)
+    ));
     const handleToggleAllMultiTimers = () => {
         if (hasRunningMultiTimer) {
             handlePauseAllMultiTimers();
@@ -241,26 +311,51 @@ const App: React.FC = () => {
 
         const syncTimersToClock = () => {
             setMultiTimers(prevTimers => prevTimers.map(timer => {
-                if (!timer.timerState.isRunning || !timer.timerState.finishTime) {
+                const activeFinishTime = timer.timerState.phase === 'extra'
+                    ? timer.timerState.extraFinishTime
+                    : timer.timerState.finishTime;
+
+                if (!timer.timerState.isRunning || !activeFinishTime) {
                     return timer;
                 }
 
-                const remainingMs = Math.max(0, timer.timerState.finishTime.getTime() - Date.now());
+                const remainingMs = Math.max(0, activeFinishTime.getTime() - Date.now());
                 const newTimeRemaining = Math.max(0, Math.ceil(remainingMs / 1000));
 
                 if (newTimeRemaining <= 0) {
+                    if (timer.timerState.phase === 'standard' && timer.timerState.extraTimeRemaining > 0) {
+                        const extraDurationMs = timer.timerState.extraTimeRemaining * 1000;
+                        return {
+                            ...timer,
+                            pausedRemainingMs: extraDurationMs,
+                            timerState: {
+                                ...timer.timerState,
+                                timeRemaining: 0,
+                                isRunning: true,
+                                extraFinishTime: new Date(Date.now() + extraDurationMs),
+                                phase: 'extra'
+                            }
+                        };
+                    }
+
                     return {
                         ...timer,
                         pausedRemainingMs: 0,
                         timerState: {
                             ...timer.timerState,
                             timeRemaining: 0,
-                            isRunning: false
+                            extraTimeRemaining: 0,
+                            isRunning: false,
+                            phase: 'complete'
                         }
                     };
                 }
 
-                if (newTimeRemaining === timer.timerState.timeRemaining) {
+                const currentDisplayedRemaining = timer.timerState.phase === 'extra'
+                    ? timer.timerState.extraTimeRemaining
+                    : timer.timerState.timeRemaining;
+
+                if (newTimeRemaining === currentDisplayedRemaining) {
                     return {
                         ...timer,
                         pausedRemainingMs: remainingMs
@@ -272,7 +367,10 @@ const App: React.FC = () => {
                     pausedRemainingMs: remainingMs,
                     timerState: {
                         ...timer.timerState,
-                        timeRemaining: newTimeRemaining
+                        ...(timer.timerState.phase === 'extra'
+                            ? { extraTimeRemaining: newTimeRemaining }
+                            : { timeRemaining: newTimeRemaining }
+                        )
                     }
                 };
             }));
@@ -352,7 +450,8 @@ const App: React.FC = () => {
 
     const directExamOptions = useMemo(() => [
         'C1 Advanced',
-        'C2 Proficiency'
+        'C2 Proficiency',
+        '1 minute TEST'
     ], []);
 
     const allAvailableExams = useMemo(() =>
@@ -364,6 +463,14 @@ const App: React.FC = () => {
     const paperOptions = useMemo(() => 
         selectedExam ? selectedExam.papers.map(paper => paper.name) : [],
         [selectedExam]
+    );
+    const extraTimeOptionLabels = useMemo(() =>
+        EXTRA_TIME_OPTIONS.filter(option => option.value > 0).map(option => option.label),
+        []
+    );
+    const displaySelectedPaper = useMemo(
+        () => getDisplayPaper(selectedPaper),
+        [selectedPaper]
     );
 
     // Handle exam selection
@@ -377,9 +484,12 @@ const App: React.FC = () => {
         // Reset timer state when exam changes
         setTimerState({
             timeRemaining: 0,
+            extraTimeRemaining: 0,
             isRunning: false,
             startTime: null,
-            finishTime: null
+            finishTime: null,
+            extraFinishTime: null,
+            phase: 'standard'
         });
     };
 
@@ -391,16 +501,48 @@ const App: React.FC = () => {
         
         // Initialize timer duration based on selected paper
         if (paper) {
-            const durationInSeconds = paper.durationMinutes * 60;
+            const durationInSeconds = getOfficialDurationSeconds(paper);
             pausedRemainingMsRef.current = durationInSeconds * 1000;
             hasTimerCompletedRef.current = false;
             setTimerState({
                 timeRemaining: durationInSeconds,
+                extraTimeRemaining: getExtraTimeSeconds(paper, extraTimePercent),
                 isRunning: false,
                 startTime: null,
-                finishTime: null
+                finishTime: null,
+                extraFinishTime: null,
+                phase: 'standard'
             });
         }
+    };
+
+    const applySingleExtraTime = (nextExtraTimePercent: ExtraTimePercent) => {
+        setExtraTimePercent(nextExtraTimePercent);
+
+        if (!selectedPaper) {
+            return;
+        }
+
+        const durationInSeconds = getOfficialDurationSeconds(selectedPaper);
+        pausedRemainingMsRef.current = durationInSeconds * 1000;
+        hasTimerCompletedRef.current = false;
+        setTimerState({
+            timeRemaining: durationInSeconds,
+            extraTimeRemaining: getExtraTimeSeconds(selectedPaper, nextExtraTimePercent),
+            isRunning: false,
+            startTime: null,
+            finishTime: null,
+            extraFinishTime: null,
+            phase: 'standard'
+        });
+    };
+
+    const handleExtraTimeToggle = (isChecked: boolean) => {
+        applySingleExtraTime(isChecked ? 25 : 0);
+    };
+
+    const handleExtraTimeSelect = (extraTimeLabel: string) => {
+        applySingleExtraTime(getExtraTimePercentFromLabel(extraTimeLabel));
     };
 
     const handleMultiExamSelect = (timerId: number, examName: string) => {
@@ -412,6 +554,7 @@ const App: React.FC = () => {
                     ...timer,
                     selectedExam: exam,
                     selectedPaper: null,
+                    extraTimePercent: 0,
                     pausedRemainingMs: null,
                     timerState: createInitialTimerState()
                 }
@@ -426,7 +569,7 @@ const App: React.FC = () => {
             }
 
             const paper = timer.selectedExam.papers.find(p => p.name === paperName) || null;
-            const durationInSeconds = paper ? paper.durationMinutes * 60 : 0;
+            const durationInSeconds = paper ? getOfficialDurationSeconds(paper) : 0;
 
             return {
                 ...timer,
@@ -435,13 +578,53 @@ const App: React.FC = () => {
                 timerState: paper
                     ? {
                         timeRemaining: durationInSeconds,
+                        extraTimeRemaining: getExtraTimeSeconds(paper, timer.extraTimePercent),
                         isRunning: false,
                         startTime: null,
-                        finishTime: null
+                        finishTime: null,
+                        extraFinishTime: null,
+                        phase: 'standard'
                     }
                     : createInitialTimerState()
             };
         }));
+    };
+
+    const applyMultiExtraTime = (timerId: number, nextExtraTimePercent: ExtraTimePercent) => {
+        setMultiTimers(prevTimers => prevTimers.map(timer => {
+            if (timer.id !== timerId) {
+                return timer;
+            }
+
+            const durationInSeconds = timer.selectedPaper
+                ? getOfficialDurationSeconds(timer.selectedPaper)
+                : 0;
+
+            return {
+                ...timer,
+                extraTimePercent: nextExtraTimePercent,
+                pausedRemainingMs: timer.selectedPaper ? durationInSeconds * 1000 : null,
+                timerState: timer.selectedPaper
+                    ? {
+                        timeRemaining: durationInSeconds,
+                        extraTimeRemaining: getExtraTimeSeconds(timer.selectedPaper, nextExtraTimePercent),
+                        isRunning: false,
+                        startTime: null,
+                        finishTime: null,
+                        extraFinishTime: null,
+                        phase: 'standard'
+                    }
+                    : createInitialTimerState()
+            };
+        }));
+    };
+
+    const handleMultiExtraTimeToggle = (timerId: number, isChecked: boolean) => {
+        applyMultiExtraTime(timerId, isChecked ? 25 : 0);
+    };
+
+    const handleMultiExtraTimeSelect = (timerId: number, extraTimeLabel: string) => {
+        applyMultiExtraTime(timerId, getExtraTimePercentFromLabel(extraTimeLabel));
     };
 
     const handleAddMultiTimer = () => {
@@ -475,14 +658,21 @@ const App: React.FC = () => {
 
     const handleStartMultiTimer = (timerId: number) => {
         updateMultiTimer(timerId, timer => {
-            if (!timer.selectedPaper || timer.selectedPaper.isListening || timer.timerState.timeRemaining <= 0) {
+            const currentRemaining = timer.timerState.phase === 'extra'
+                ? timer.timerState.extraTimeRemaining
+                : timer.timerState.timeRemaining;
+
+            if (!timer.selectedPaper || timer.selectedPaper.isListening || currentRemaining <= 0) {
                 return timer;
             }
 
             if (timer.timerState.isRunning) {
-                const remainingMs = timer.timerState.finishTime
-                    ? Math.max(0, timer.timerState.finishTime.getTime() - Date.now())
-                    : Math.max(0, timer.timerState.timeRemaining * 1000);
+                const activeFinishTime = timer.timerState.phase === 'extra'
+                    ? timer.timerState.extraFinishTime
+                    : timer.timerState.finishTime;
+                const remainingMs = activeFinishTime
+                    ? Math.max(0, activeFinishTime.getTime() - Date.now())
+                    : Math.max(0, currentRemaining * 1000);
 
                 return {
                     ...timer,
@@ -490,24 +680,37 @@ const App: React.FC = () => {
                     timerState: {
                         ...timer.timerState,
                         isRunning: false,
-                        finishTime: null,
-                        timeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                        ...(timer.timerState.phase === 'extra'
+                            ? {
+                                extraFinishTime: null,
+                                extraTimeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                            }
+                            : {
+                                finishTime: null,
+                                timeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                            }
+                        )
                     }
                 };
             }
 
             if (!timer.timerState.startTime) {
                 const startTime = new Date();
-                const durationMs = timer.selectedPaper.durationMinutes * 60 * 1000;
+                const durationInSeconds = getOfficialDurationSeconds(timer.selectedPaper);
+                const durationMs = durationInSeconds * 1000;
 
                 return {
                     ...timer,
                     pausedRemainingMs: durationMs,
                     timerState: {
                         ...timer.timerState,
+                        timeRemaining: durationInSeconds,
+                        extraTimeRemaining: getExtraTimeSeconds(timer.selectedPaper, timer.extraTimePercent),
                         isRunning: true,
                         startTime,
-                        finishTime: new Date(startTime.getTime() + durationMs)
+                        finishTime: new Date(startTime.getTime() + durationMs),
+                        extraFinishTime: null,
+                        phase: 'standard'
                     }
                 };
             }
@@ -520,8 +723,16 @@ const App: React.FC = () => {
                 timerState: {
                     ...timer.timerState,
                     isRunning: true,
-                    finishTime: new Date(Date.now() + resumeRemainingMs),
-                    timeRemaining: Math.max(0, Math.ceil(resumeRemainingMs / 1000))
+                    ...(timer.timerState.phase === 'extra'
+                        ? {
+                            extraFinishTime: new Date(Date.now() + resumeRemainingMs),
+                            extraTimeRemaining: Math.max(0, Math.ceil(resumeRemainingMs / 1000))
+                        }
+                        : {
+                            finishTime: new Date(Date.now() + resumeRemainingMs),
+                            timeRemaining: Math.max(0, Math.ceil(resumeRemainingMs / 1000))
+                        }
+                    )
                 }
             };
         });
@@ -533,16 +744,19 @@ const App: React.FC = () => {
                 return timer;
             }
 
-            const durationInSeconds = timer.selectedPaper.durationMinutes * 60;
+            const durationInSeconds = getOfficialDurationSeconds(timer.selectedPaper);
 
             return {
                 ...timer,
                 pausedRemainingMs: durationInSeconds * 1000,
                 timerState: {
                     timeRemaining: durationInSeconds,
+                    extraTimeRemaining: getExtraTimeSeconds(timer.selectedPaper, timer.extraTimePercent),
                     isRunning: false,
                     startTime: null,
-                    finishTime: null
+                    finishTime: null,
+                    extraFinishTime: null,
+                    phase: 'standard'
                 }
             };
         });
@@ -573,50 +787,77 @@ const App: React.FC = () => {
         if (!selectedPaper || selectedPaper.isListening) return;
         
         setTimerState(prevState => {
-            if (prevState.timeRemaining <= 0) {
+            const currentRemaining = prevState.phase === 'extra'
+                ? prevState.extraTimeRemaining
+                : prevState.timeRemaining;
+
+            if (currentRemaining <= 0) {
                 return prevState;
             }
 
             // If timer is already running, this is a pause action
             if (prevState.isRunning) {
-                const remainingMs = prevState.finishTime
-                    ? Math.max(0, prevState.finishTime.getTime() - Date.now())
-                    : Math.max(0, prevState.timeRemaining * 1000);
+                const activeFinishTime = prevState.phase === 'extra'
+                    ? prevState.extraFinishTime
+                    : prevState.finishTime;
+                const remainingMs = activeFinishTime
+                    ? Math.max(0, activeFinishTime.getTime() - Date.now())
+                    : Math.max(0, currentRemaining * 1000);
                 pausedRemainingMsRef.current = remainingMs;
 
                 return {
                     ...prevState,
                     isRunning: false,
-                    finishTime: null,
-                    timeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                    ...(prevState.phase === 'extra'
+                        ? {
+                            extraFinishTime: null,
+                            extraTimeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                        }
+                        : {
+                            finishTime: null,
+                            timeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                        }
+                    )
                 };
             }
             
             // If starting for the first time (no start time recorded)
             if (!prevState.startTime) {
                 const startTime = new Date();
-                const finishTime = new Date(startTime.getTime() + (selectedPaper.durationMinutes * 60 * 1000));
-                pausedRemainingMsRef.current = selectedPaper.durationMinutes * 60 * 1000;
+                const durationInSeconds = getOfficialDurationSeconds(selectedPaper);
+                const finishTime = new Date(startTime.getTime() + (durationInSeconds * 1000));
+                pausedRemainingMsRef.current = durationInSeconds * 1000;
                 hasTimerCompletedRef.current = false;
                 
                 return {
                     ...prevState,
+                    timeRemaining: durationInSeconds,
+                    extraTimeRemaining: getExtraTimeSeconds(selectedPaper, extraTimePercent),
                     isRunning: true,
                     startTime,
-                    finishTime
+                    finishTime,
+                    extraFinishTime: null,
+                    phase: 'standard'
                 };
             }
             
             // Resume from pause
-            const resumeRemainingMs = pausedRemainingMsRef.current ?? (prevState.timeRemaining * 1000);
-            const finishTime = new Date(Date.now() + resumeRemainingMs);
+            const resumeRemainingMs = pausedRemainingMsRef.current ?? (currentRemaining * 1000);
             hasTimerCompletedRef.current = false;
 
             return {
                 ...prevState,
                 isRunning: true,
-                finishTime,
-                timeRemaining: Math.max(0, Math.ceil(resumeRemainingMs / 1000))
+                ...(prevState.phase === 'extra'
+                    ? {
+                        extraFinishTime: new Date(Date.now() + resumeRemainingMs),
+                        extraTimeRemaining: Math.max(0, Math.ceil(resumeRemainingMs / 1000))
+                    }
+                    : {
+                        finishTime: new Date(Date.now() + resumeRemainingMs),
+                        timeRemaining: Math.max(0, Math.ceil(resumeRemainingMs / 1000))
+                    }
+                )
             };
         });
     };
@@ -625,14 +866,17 @@ const App: React.FC = () => {
     const handleResetTimer = () => {
         if (!selectedPaper || selectedPaper.isListening) return;
         
-        const durationInSeconds = selectedPaper.durationMinutes * 60;
+        const durationInSeconds = getOfficialDurationSeconds(selectedPaper);
         pausedRemainingMsRef.current = durationInSeconds * 1000;
         hasTimerCompletedRef.current = false;
         setTimerState({
             timeRemaining: durationInSeconds,
+            extraTimeRemaining: getExtraTimeSeconds(selectedPaper, extraTimePercent),
             isRunning: false,
             startTime: null,
-            finishTime: null
+            finishTime: null,
+            extraFinishTime: null,
+            phase: 'standard'
         });
     };
 
@@ -693,10 +937,20 @@ const App: React.FC = () => {
         setIsTimerScreen(false);
     };
 
-    const hasReadyMultiTimer = multiTimers.every(timer => !!timer.selectedExam && !!timer.selectedPaper);
+    const readyMultiTimerCount = multiTimers.filter(timer => !!timer.selectedExam && !!timer.selectedPaper).length;
+    const hasReadyMultiTimer = readyMultiTimerCount >= 2
+        && multiTimers.every(timer => !!timer.selectedExam && !!timer.selectedPaper);
     const canOpenTimerScreen = timerMode === 'single'
         ? !!selectedExam && !!selectedPaper
         : hasReadyMultiTimer;
+
+    const toggleMultiExtraTimeExpanded = (timerId: number) => {
+        setExpandedMultiExtraTimerIds(prevIds => (
+            prevIds.includes(timerId)
+                ? prevIds.filter(id => id !== timerId)
+                : [...prevIds, timerId]
+        ));
+    };
 
     // Render timer screen (windowed by default, optionally browser fullscreen)
     if (isTimerScreen) {
@@ -727,13 +981,18 @@ const App: React.FC = () => {
                         {readyTimers.map((timer, index) => {
                             const selectedTimerExam = timer.selectedExam as Exam;
                             const selectedTimerPaper = timer.selectedPaper as Paper;
-                            const isComplete = !!timer.timerState.startTime
-                                && !timer.timerState.isRunning
-                                && timer.timerState.timeRemaining === 0;
+                            const adjustedTimerPaper = getDisplayPaper(selectedTimerPaper) as Paper;
+                            const totalTimerSeconds = getOfficialDurationSeconds(selectedTimerPaper);
+                            const totalExtraTimerSeconds = getExtraTimeSeconds(selectedTimerPaper, timer.extraTimePercent);
+                            const officialTimeUp = timer.timerState.phase === 'extra' || timer.timerState.phase === 'complete';
+                            const isExtraTimeExpanded = expandedMultiExtraTimerIds.includes(timer.id);
                             const startTime = timer.timerState.startTime ? formatTimeHHMM(timer.timerState.startTime) : '-';
                             const finishTime = timer.timerState.finishTime ? formatTimeHHMM(timer.timerState.finishTime) : '-';
-                            const progressPercentage = selectedTimerPaper.durationMinutes > 0
-                                ? Math.min(100, Math.max(0, ((selectedTimerPaper.durationMinutes * 60 - timer.timerState.timeRemaining) / (selectedTimerPaper.durationMinutes * 60)) * 100))
+                            const progressPercentage = totalTimerSeconds > 0
+                                ? Math.min(100, Math.max(0, ((totalTimerSeconds - timer.timerState.timeRemaining) / totalTimerSeconds) * 100))
+                                : 0;
+                            const extraProgressPercentage = totalExtraTimerSeconds > 0
+                                ? Math.min(100, Math.max(0, ((totalExtraTimerSeconds - timer.timerState.extraTimeRemaining) / totalExtraTimerSeconds) * 100))
                                 : 0;
                             const accentClasses = readyTimers.length >= 2
                                 ? getDoubleTimerAccentClasses(selectedTimerExam.name)
@@ -749,6 +1008,9 @@ const App: React.FC = () => {
                             const timerTextClasses = readyTimers.length === 3
                                 ? 'text-[clamp(5.25rem,7.8vw,9.2rem)]'
                                 : 'text-[clamp(5.75rem,9vw,12rem)]';
+                            const completeTextClasses = readyTimers.length === 3
+                                ? 'text-[clamp(2.8rem,3.8vw,4.8rem)]'
+                                : 'text-[clamp(3.5rem,5vw,6.5rem)]';
                             const listeningIconClasses = readyTimers.length === 3
                                 ? 'text-[clamp(6rem,9vw,11rem)]'
                                 : 'text-[clamp(7rem,12vw,14rem)]';
@@ -777,6 +1039,9 @@ const App: React.FC = () => {
                             const timerDisplayText = readyTimers.length === 3
                                 ? formatFourDigitTimerDisplay(timer.timerState.timeRemaining)
                                 : formatTimerDisplay(timer.timerState.timeRemaining);
+                            const extraTimeDisplay = readyTimers.length === 3
+                                ? formatFourDigitTimerDisplay(timer.timerState.extraTimeRemaining)
+                                : formatTimerDisplay(timer.timerState.extraTimeRemaining);
 
                             if (readyTimers.length >= 2) {
                                 return (
@@ -797,11 +1062,55 @@ const App: React.FC = () => {
                                                     {'\u{1F3A7}'}
                                                 </div>
                                             </div>
+                                        ) : isExtraTimeExpanded && timer.extraTimePercent > 0 && officialTimeUp ? (
+                                            <div className={`flex flex-1 flex-col justify-center ${readyTimers.length === 3 ? 'pt-3' : ''}`}>
+                                                <div className={`text-center text-[clamp(1.2rem,1.5vw,2rem)] font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                    {timer.timerState.phase === 'complete' ? 'Extra Time Finished' : 'Extra Time Remaining'}
+                                                </div>
+                                                <div className={`mt-4 text-center font-mono ${readyTimers.length === 3 ? 'text-[clamp(5.25rem,7.8vw,9.2rem)]' : 'text-[clamp(5.75rem,9vw,12rem)]'} font-bold leading-none tracking-[0.04em] text-slate-900`}>
+                                                    {extraTimeDisplay}
+                                                </div>
+                                                <div className={`${progressClasses} overflow-hidden rounded-full border-2 ${accentClasses.border} bg-white`}>
+                                                    <div
+                                                        className={`h-full rounded-full ${accentClasses.bg} transition-all duration-1000 ease-linear`}
+                                                        style={{ width: `${extraProgressPercentage}%` }}
+                                                    />
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleMultiExtraTimeExpanded(timer.id)}
+                                                    className={`absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-md border ${accentClasses.border} bg-white/90 ${accentClasses.text} shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                                                    aria-label="Shrink extra time timer"
+                                                    title="Shrink extra time timer"
+                                                >
+                                                    <ExpandToggleIcon collapsed size={17} />
+                                                </button>
+                                            </div>
                                         ) : (
                                             <div className={`flex flex-1 flex-col ${readyTimers.length === 3 ? 'justify-start pt-6' : 'justify-center'}`}>
-                                                <div className={`text-center font-mono ${timerTextClasses} font-bold leading-none tracking-[0.04em] text-slate-900`}>
-                                                    {isComplete ? "Time's Up!" : timerDisplayText}
+                                                <div className={`text-center ${officialTimeUp ? completeTextClasses : timerTextClasses} font-bold leading-none tracking-[0.04em] text-slate-900 ${officialTimeUp ? 'font-sans whitespace-nowrap text-red-500' : 'font-mono'}`}>
+                                                    {officialTimeUp ? "Time's Up!" : timerDisplayText}
                                                 </div>
+
+                                                {timer.extraTimePercent > 0 && officialTimeUp && (
+                                                    <div className={`relative mx-auto mt-4 w-fit min-w-[18rem] rounded-lg border ${accentClasses.border} ${accentClasses.chip} px-14 py-2 text-center`}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleMultiExtraTimeExpanded(timer.id)}
+                                                            className={`absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border ${accentClasses.border} bg-white/90 ${accentClasses.text} shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                                                            aria-label="Enlarge extra time timer"
+                                                            title="Enlarge extra time timer"
+                                                        >
+                                                            <ExpandToggleIcon size={15} />
+                                                        </button>
+                                                        <div className={`text-center text-sm font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                            {timer.timerState.phase === 'complete' ? 'Extra Time Finished' : 'Extra Time Remaining'}
+                                                        </div>
+                                                        <div className="font-mono text-3xl font-bold leading-none text-slate-900">
+                                                            {extraTimeDisplay}
+                                                        </div>
+                                                    </div>
+                                                )}
 
                                                 <div className={`${progressClasses} overflow-hidden rounded-full border-2 ${accentClasses.border} bg-white`}>
                                                     <div
@@ -865,7 +1174,14 @@ const App: React.FC = () => {
                                                 Duration:
                                             </div>
                                             <div className={`${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
-                                                {formatDuration(selectedTimerPaper.durationMinutes)}
+                                                <span>
+                                                    {formatDuration(adjustedTimerPaper.durationMinutes)}{timer.extraTimePercent > 0 ? '*' : ''}
+                                                </span>
+                                                {timer.extraTimePercent > 0 && (
+                                                    <div className={`mt-1 text-[clamp(0.8rem,0.9vw,1.05rem)] font-semibold leading-tight ${accentClasses.text}`}>
+                                                        * Some candidates have {timer.extraTimePercent}% extra time
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </section>
@@ -898,7 +1214,14 @@ const App: React.FC = () => {
                                                 Duration:
                                             </div>
                                             <div className="text-[clamp(1.3rem,1.7vw,2.2rem)] font-bold leading-tight text-slate-800">
-                                                {formatDuration(selectedTimerPaper.durationMinutes)}
+                                                <span>
+                                                    {formatDuration(adjustedTimerPaper.durationMinutes)}{timer.extraTimePercent > 0 ? '*' : ''}
+                                                </span>
+                                                {timer.extraTimePercent > 0 && (
+                                                    <div className="mt-1 text-sm font-semibold leading-tight text-blue-700">
+                                                        * Some candidates have {timer.extraTimePercent}% extra time
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
@@ -928,12 +1251,31 @@ const App: React.FC = () => {
                                         <>
                                             <div className="flex min-h-0 flex-1 items-center justify-center py-2">
                                                 <TimerDisplay
-                                                    timeRemaining={timer.timerState.timeRemaining}
-                                                    totalTime={selectedTimerPaper.durationMinutes * 60}
+                                                    timeRemaining={isExtraTimeExpanded && timer.extraTimePercent > 0 && officialTimeUp ? timer.timerState.extraTimeRemaining : timer.timerState.timeRemaining}
+                                                    totalTime={isExtraTimeExpanded && timer.extraTimePercent > 0 && officialTimeUp ? totalExtraTimerSeconds : totalTimerSeconds}
                                                     isFullScreen={true}
-                                                    isComplete={isComplete}
+                                                    isComplete={officialTimeUp && !isExtraTimeExpanded}
                                                     className="max-h-full"
                                                 >
+                                                    {timer.extraTimePercent > 0 && officialTimeUp && (
+                                                        <div className="relative mb-3 min-w-[18rem] rounded-lg border border-blue-300 bg-blue-50 px-14 py-2 text-center">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleMultiExtraTimeExpanded(timer.id)}
+                                                                className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-300 bg-white/90 text-blue-700 shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                aria-label={isExtraTimeExpanded ? 'Shrink extra time timer' : 'Enlarge extra time timer'}
+                                                                title={isExtraTimeExpanded ? 'Shrink extra time timer' : 'Enlarge extra time timer'}
+                                                            >
+                                                                <ExpandToggleIcon collapsed={isExtraTimeExpanded} size={15} />
+                                                            </button>
+                                                            <div className="text-center text-sm font-semibold uppercase tracking-[0.08em] text-blue-700">
+                                                                {timer.timerState.phase === 'complete' ? 'Extra Time Finished' : 'Extra Time Remaining'}
+                                                            </div>
+                                                            <div className="font-mono text-3xl font-bold leading-none text-slate-900">
+                                                                {formatTimerDisplay(timer.timerState.extraTimeRemaining)}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                     <TimerControls
                                                         onStart={() => handleStartMultiTimer(timer.id)}
                                                         onPause={() => handleStartMultiTimer(timer.id)}
@@ -979,6 +1321,9 @@ const App: React.FC = () => {
             );
         }
 
+        const singleOfficialTimeUp = timerState.phase === 'extra' || timerState.phase === 'complete';
+        const singleExtraTotalSeconds = selectedPaper ? getExtraTimeSeconds(selectedPaper, extraTimePercent) : 0;
+
         return (
             <div 
                 className="h-screen h-[100dvh] bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden flex flex-col"
@@ -1018,9 +1363,10 @@ const App: React.FC = () => {
                     {selectedExam && selectedPaper ? (
                         <ExamInfoDisplay
                             selectedExam={selectedExam}
-                            selectedPaper={selectedPaper}
+                            selectedPaper={displaySelectedPaper}
                             timerState={timerState}
                             isFullScreen={true}
+                            extraTimePercent={extraTimePercent}
                         />
                     ) : (
                         <div className="text-center">
@@ -1051,12 +1397,52 @@ const App: React.FC = () => {
                                 {/* Circular Timer Display - uses the available column space */}
                                 <div className="min-h-0 h-full w-full flex items-center justify-center">
                                     <TimerDisplay 
-                                        timeRemaining={timerState.timeRemaining}
-                                        totalTime={selectedPaper ? selectedPaper.durationMinutes * 60 : 0}
+                                        timeRemaining={isSingleExtraTimeExpanded && singleOfficialTimeUp ? timerState.extraTimeRemaining : timerState.timeRemaining}
+                                        totalTime={isSingleExtraTimeExpanded && singleOfficialTimeUp ? singleExtraTotalSeconds : (selectedPaper ? getOfficialDurationSeconds(selectedPaper) : 0)}
                                         isFullScreen={true}
-                                        isComplete={!!timerState.startTime && !timerState.isRunning && timerState.timeRemaining === 0}
+                                        isComplete={singleOfficialTimeUp && (!isSingleExtraTimeExpanded || timerState.phase === 'complete')}
+                                        completeLabel={isSingleExtraTimeExpanded && timerState.phase === 'complete' ? 'Extra Time Finished' : "Time's Up!"}
                                         className="max-h-full"
                                     >
+                                        {extraTimePercent > 0 && singleOfficialTimeUp && !isSingleExtraTimeExpanded && (
+                                            <div className="relative mb-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2 text-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsSingleExtraTimeExpanded(isExpanded => !isExpanded)}
+                                                    className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-300 bg-white/90 text-blue-700 shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    aria-label={isSingleExtraTimeExpanded ? 'Shrink extra time timer' : 'Enlarge extra time timer'}
+                                                    title={isSingleExtraTimeExpanded ? 'Shrink extra time timer' : 'Enlarge extra time timer'}
+                                                >
+                                                    <ExpandToggleIcon collapsed={isSingleExtraTimeExpanded} size={15} />
+                                                </button>
+                                                <div className="px-8 text-xs font-semibold uppercase tracking-[0.04em] leading-tight text-blue-700 sm:text-sm">
+                                                    {timerState.phase === 'complete' ? 'Extra Time Finished' : 'Extra Time Remaining'}
+                                                </div>
+                                                <div className="font-mono text-3xl font-bold leading-none text-slate-900">
+                                                    {formatTimerDisplay(timerState.extraTimeRemaining)}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {extraTimePercent > 0 && timerState.phase === 'extra' && isSingleExtraTimeExpanded && (
+                                            <>
+                                                <div className="absolute left-1/2 top-[calc(12%+2cm)] -translate-x-1/2 whitespace-nowrap text-center text-[clamp(1.2rem,1.7vw,2.2rem)] font-semibold uppercase tracking-[0.08em] text-blue-700">
+                                                    Extra Time Remaining
+                                                </div>
+                                            </>
+                                        )}
+                                        {extraTimePercent > 0 && singleOfficialTimeUp && isSingleExtraTimeExpanded && (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsSingleExtraTimeExpanded(false)}
+                                                    className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-300 bg-white/90 text-blue-700 shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    aria-label="Shrink extra time timer"
+                                                    title="Shrink extra time timer"
+                                                >
+                                                    <ExpandToggleIcon collapsed size={17} />
+                                                </button>
+                                            </>
+                                        )}
                                         <TimerControls
                                             onStart={handleStartTimer}
                                             onPause={handleStartTimer}
@@ -1170,15 +1556,43 @@ const App: React.FC = () => {
                                     />
                                 </div>
 
+                                <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-3">
+                                    <label className={`inline-flex items-center gap-3 text-sm font-semibold ${selectedPaper ? 'text-slate-700' : 'text-slate-400'}`}>
+                                        <input
+                                            type="checkbox"
+                                            checked={extraTimePercent > 0}
+                                            onChange={(event) => handleExtraTimeToggle(event.target.checked)}
+                                            disabled={!selectedPaper}
+                                            className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                        />
+                                        Do any candidates have extra time?
+                                    </label>
+
+                                    <div className="min-h-[3.125rem]">
+                                        {extraTimePercent > 0 && (
+                                        <Dropdown
+                                            id="extra-time-select"
+                                            options={extraTimeOptionLabels}
+                                            value={getExtraTimeLabel(extraTimePercent)}
+                                            onChange={handleExtraTimeSelect}
+                                            disabled={!selectedPaper}
+                                            placeholder="Choose extra time..."
+                                            aria-label="Select extra time allowance"
+                                        />
+                                        )}
+                                    </div>
+                                </div>
+
                                 {/* Exam Information Preview */}
                                 {selectedExam && selectedPaper && (
                                     <div className="mt-6 sm:mt-8 space-y-4">
                                         <ExamInfoDisplay
                                             selectedExam={selectedExam}
-                                            selectedPaper={selectedPaper}
+                                            selectedPaper={displaySelectedPaper}
                                             timerState={timerState}
                                             isFullScreen={false}
                                             showTimes={false}
+                                            extraTimePercent={extraTimePercent}
                                         />
                                     </div>
                                 )}
@@ -1241,7 +1655,35 @@ const App: React.FC = () => {
                                                         aria-label={`Select paper for timer ${index + 1}`}
                                                     />
                                                 </div>
+
+                                                <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-3 md:col-span-2">
+                                                    <label className={`inline-flex items-center gap-3 text-sm font-semibold ${timer.selectedPaper ? 'text-slate-700' : 'text-slate-400'}`}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={timer.extraTimePercent > 0}
+                                                            onChange={(event) => handleMultiExtraTimeToggle(timer.id, event.target.checked)}
+                                                            disabled={!timer.selectedPaper}
+                                                            className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        />
+                                                        Do any candidates have extra time?
+                                                    </label>
+
+                                                    <div className="min-h-[3.125rem]">
+                                                        {timer.extraTimePercent > 0 && (
+                                                        <Dropdown
+                                                            id={`multi-extra-time-${timer.id}`}
+                                                            options={extraTimeOptionLabels}
+                                                            value={getExtraTimeLabel(timer.extraTimePercent)}
+                                                            onChange={(extraTimeLabel) => handleMultiExtraTimeSelect(timer.id, extraTimeLabel)}
+                                                            disabled={!timer.selectedPaper}
+                                                            placeholder="Choose extra time..."
+                                                            aria-label={`Select extra time allowance for timer ${index + 1}`}
+                                                        />
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
+
                                         </section>
                                     );
                                 })}

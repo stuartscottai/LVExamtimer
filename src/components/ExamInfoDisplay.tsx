@@ -8,6 +8,7 @@ interface ExamInfoDisplayProps {
   timerState: TimerState;
   isFullScreen?: boolean;
   showTimes?: boolean;
+  extraTimePercent?: number;
 }
 
 const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
@@ -15,7 +16,8 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
   selectedPaper,
   timerState,
   isFullScreen = false,
-  showTimes = true
+  showTimes = true,
+  extraTimePercent = 0
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -33,6 +35,7 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
 
   // Format duration
   const durationFormatted = formatDuration(selectedPaper.durationMinutes);
+  const hasExtraTime = extraTimePercent > 0;
 
   useEffect(() => {
     fontSizeRef.current = fontSize;
@@ -125,6 +128,7 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
     selectedExam.name,
     selectedPaper.name,
     durationFormatted,
+    extraTimePercent,
     startTimeFormatted,
     finishTimeFormatted
   ]);
@@ -147,6 +151,10 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
   const timeClasses = isFullScreen
     ? 'text-[1em] font-mono font-bold tabular-nums text-slate-800 leading-tight'
     : 'text-lg font-mono font-semibold text-slate-800';
+
+  const extraTimeNoteClasses = isFullScreen
+    ? 'mt-[0.18em] text-[0.34em] font-semibold leading-tight text-blue-700'
+    : 'mt-1 text-sm font-semibold leading-tight text-blue-700';
 
   const sectionSpacingClasses = isFullScreen
     ? 'grid w-full grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-[0.42em] gap-y-[0.44em]'
@@ -217,7 +225,14 @@ const ExamInfoDisplay: React.FC<ExamInfoDisplayProps> = ({
         {/* Duration */}
         <div className={itemClasses}>
           <div className={labelClasses} id="duration-label">Duration:</div>
-          <div className={valueClasses} aria-labelledby="duration-label">{durationFormatted}</div>
+          <div className={valueClasses} aria-labelledby="duration-label">
+            {durationFormatted}{hasExtraTime ? '*' : ''}
+            {hasExtraTime && (
+              <div className={extraTimeNoteClasses}>
+                * Some candidates have {extraTimePercent}% extra time
+              </div>
+            )}
+          </div>
         </div>
         {isFullScreen && showTimes && <div className={dividerClasses} aria-hidden="true" />}
 
