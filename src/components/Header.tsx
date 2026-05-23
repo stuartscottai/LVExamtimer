@@ -19,11 +19,11 @@ const Header: React.FC<HeaderProps> = ({
   centreNumber
 }) => {
   const centreNumberBlock = centreNumber ? (
-    <div className="border-l border-white/70 pl-6">
-      <div className="text-sm font-semibold uppercase tracking-[0.06em] text-white/90">
+    <div className="border-l border-white/70 pl-3 sm:pl-6">
+      <div className="text-xs font-semibold uppercase tracking-[0.06em] text-white/90 sm:text-sm">
         Centre Number:
       </div>
-      <div className="text-3xl font-bold leading-tight tracking-[0.02em]">
+      <div className="text-2xl font-bold leading-tight tracking-[0.02em] sm:text-3xl">
         {centreNumber}
       </div>
     </div>
@@ -31,17 +31,22 @@ const Header: React.FC<HeaderProps> = ({
 
   if (isFullScreen) {
     return (
-      <header className={`bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-3 sm:py-4 px-4 sm:px-6 lg:px-8 shadow-xl ${className}`}>
+      <header className={`bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-3 py-2 shadow-xl sm:px-6 sm:py-4 lg:px-8 ${className}`}>
         <div className="w-full flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <LenguasVivasLogo size={140} />
+          <div className="flex items-center gap-3 sm:gap-6">
+            <span className="sm:hidden">
+              <LenguasVivasLogo size={88} />
+            </span>
+            <span className="hidden sm:inline">
+              <LenguasVivasLogo size={140} />
+            </span>
             {centreNumberBlock}
           </div>
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={onBackToHome}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/15 text-white transition-colors hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/70"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 text-white transition-colors hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/70 sm:h-11 sm:w-11"
               aria-label="Back to home screen"
               title="Back to home screen"
             >
@@ -65,7 +70,7 @@ const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onToggleFullscreen}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/15 text-white transition-colors hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/70"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 text-white transition-colors hover:bg-white/25 focus:outline-none focus:ring-2 focus:ring-white/70 sm:h-11 sm:w-11"
               aria-label={isFullscreenActive ? 'Exit full-screen mode' : 'Enter full-screen mode'}
               title={isFullscreenActive ? 'Exit full-screen mode' : 'Enter full-screen mode'}
             >
@@ -97,16 +102,21 @@ const Header: React.FC<HeaderProps> = ({
   }
 
   return (
-    <header className={`bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-6 px-6 shadow-xl ${className}`}>
-      <div className="max-w-6xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-6">
+    <header className={`bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-4 shadow-xl sm:px-6 sm:py-6 ${className}`}>
+      <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 sm:gap-6">
           {/* Lenguas Vivas Logo */}
-          <LenguasVivasLogo size={160} />
+          <span className="sm:hidden">
+            <LenguasVivasLogo size={92} />
+          </span>
+          <span className="hidden sm:inline">
+            <LenguasVivasLogo size={160} />
+          </span>
           {centreNumberBlock}
         </div>
         
         {/* Title */}
-        <div className="text-right">
+        <div className="hidden text-right sm:block">
           <h1 className="text-3xl font-bold tracking-tight">
             Cambridge Exam Timer
           </h1>

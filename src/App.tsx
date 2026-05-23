@@ -18,6 +18,93 @@ interface MultiTimerSession {
     pausedRemainingMs: number | null;
 }
 
+interface FitToBoxProps {
+    children: React.ReactNode;
+}
+
+const FitToBox: React.FC<FitToBoxProps> = ({ children }) => {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const contentRef = useRef<HTMLDivElement | null>(null);
+    const scaleRef = useRef(1);
+    const [scale, setScale] = useState(1);
+
+    useEffect(() => {
+        scaleRef.current = scale;
+    }, [scale]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        const content = contentRef.current;
+
+        if (!container || !content) {
+            return;
+        }
+
+        let animationFrame = 0;
+
+        const fit = () => {
+            const currentContainer = containerRef.current;
+            const currentContent = contentRef.current;
+
+            if (!currentContainer || !currentContent) {
+                return;
+            }
+
+            const availableWidth = currentContainer.clientWidth;
+            const availableHeight = currentContainer.clientHeight;
+            const naturalWidth = currentContent.scrollWidth;
+            const naturalHeight = currentContent.scrollHeight;
+
+            if (!availableWidth || !availableHeight || !naturalWidth || !naturalHeight) {
+                return;
+            }
+
+            const nextScale = Math.min(1, availableWidth / naturalWidth, availableHeight / naturalHeight);
+            const minimumScale = window.innerWidth < 640 ? 0.35 : 0.55;
+            const fittedScale = Math.max(minimumScale, nextScale * 0.995);
+
+            setScale(previousScale => (
+                Math.abs(previousScale - fittedScale) > 0.005 ? fittedScale : previousScale
+            ));
+        };
+
+        const scheduleFit = () => {
+            cancelAnimationFrame(animationFrame);
+            animationFrame = requestAnimationFrame(fit);
+        };
+
+        const resizeObserver = typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(scheduleFit)
+            : null;
+
+        resizeObserver?.observe(container);
+        resizeObserver?.observe(content);
+        scheduleFit();
+        window.addEventListener('resize', scheduleFit);
+
+        return () => {
+            cancelAnimationFrame(animationFrame);
+            resizeObserver?.disconnect();
+            window.removeEventListener('resize', scheduleFit);
+        };
+    }, [children]);
+
+    return (
+        <div ref={containerRef} className="h-full min-h-0 overflow-hidden">
+            <div
+                ref={contentRef}
+                className="flex h-full min-h-0 flex-col"
+                style={{
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'top center'
+                }}
+            >
+                {children}
+            </div>
+        </div>
+    );
+};
+
 const createInitialTimerState = (): TimerState => ({
     timeRemaining: 0,
     extraTimeRemaining: 0,
@@ -964,7 +1051,7 @@ const App: React.FC = () => {
 
             return (
                 <div
-                    className="h-screen h-[100dvh] bg-slate-100 relative overflow-hidden flex flex-col"
+                    className="h-screen h-[100dvh] bg-slate-100 relative flex flex-col overflow-hidden max-sm:h-auto max-sm:min-h-[100dvh] max-sm:overflow-y-auto"
                     role="application"
                     aria-label="Multiple exam timer screen display"
                 >
@@ -977,7 +1064,7 @@ const App: React.FC = () => {
                         centreNumber={CENTRE_NUMBER}
                     />
 
-                    <main className={`grid ${gridClasses} flex-1 min-h-0 gap-4 overflow-y-auto px-4 pt-4 pb-0 sm:px-6 sm:pt-6`}>
+                    <main className={`grid ${gridClasses} flex-1 min-h-0 gap-4 overflow-hidden px-4 pt-4 pb-0 max-sm:flex-none max-sm:grid-cols-1 max-sm:gap-3 max-sm:overflow-visible max-sm:px-3 max-sm:pt-3 sm:px-6 sm:pt-6`}>
                         {readyTimers.map((timer, index) => {
                             const selectedTimerExam = timer.selectedExam as Exam;
                             const selectedTimerPaper = timer.selectedPaper as Paper;
@@ -1029,6 +1116,9 @@ const App: React.FC = () => {
                             const infoGridClasses = readyTimers.length === 3
                                 ? 'grid-cols-[clamp(7rem,7.8vw,9rem)_minmax(0,1fr)] pt-4'
                                 : 'grid-cols-[clamp(8rem,10vw,12rem)_minmax(0,1fr)] pt-4';
+                            const infoPanelHeightClasses = readyTimers.length === 3
+                                ? 'h-[clamp(13rem,25vh,18rem)]'
+                                : 'h-[clamp(12rem,22vh,16rem)]';
                             const infoLabelClasses = readyTimers.length === 3
                                 ? 'text-[clamp(1rem,1.1vw,1.3rem)]'
                                 : 'text-[clamp(1.05rem,1.25vw,1.5rem)]';
@@ -1047,7 +1137,7 @@ const App: React.FC = () => {
                                 return (
                                     <section
                                         key={timer.id}
-                                        className="relative flex min-h-[32rem] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white/95 p-5 pt-14 shadow-sm"
+                                        className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white/95 p-5 pt-14 shadow-sm max-sm:h-[calc(100dvh-10rem)] max-sm:min-h-[31rem] max-sm:p-4 max-sm:pt-12"
                                         aria-label={`Timer ${index + 1}`}
                                     >
                                         <div className="absolute left-1/2 top-0 flex -translate-x-1/2 justify-center">
@@ -1056,134 +1146,136 @@ const App: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {selectedTimerPaper.isListening ? (
-                                            <div className="flex flex-1 items-center justify-center text-center">
-                                                <div className={`${listeningIconClasses} leading-none`} aria-label="Listening test">
-                                                    {'\u{1F3A7}'}
+                                        <FitToBox>
+                                            {selectedTimerPaper.isListening ? (
+                                                <div className="flex flex-1 items-center justify-center text-center">
+                                                    <div className={`${listeningIconClasses} leading-none`} aria-label="Listening test">
+                                                        {'\u{1F3A7}'}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ) : isExtraTimeExpanded && timer.extraTimePercent > 0 && officialTimeUp ? (
-                                            <div className={`flex flex-1 flex-col justify-center ${readyTimers.length === 3 ? 'pt-3' : ''}`}>
-                                                <div className={`text-center text-[clamp(1.2rem,1.5vw,2rem)] font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
-                                                    {timer.timerState.phase === 'complete' ? 'Extra Time Finished' : 'Extra Time Remaining'}
+                                            ) : isExtraTimeExpanded && timer.extraTimePercent > 0 && officialTimeUp ? (
+                                                <div className={`flex flex-1 flex-col justify-center ${readyTimers.length === 3 ? 'pt-3' : ''}`}>
+                                                    <div className={`text-center text-[clamp(1.2rem,1.5vw,2rem)] font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                        {timer.timerState.phase === 'complete' ? 'Extra Time Finished' : 'Extra Time Remaining'}
+                                                    </div>
+                                                    <div className={`mt-4 text-center font-mono ${readyTimers.length === 3 ? 'text-[clamp(5.25rem,7.8vw,9.2rem)]' : 'text-[clamp(5.75rem,9vw,12rem)]'} font-bold leading-none tracking-[0.04em] text-slate-900`}>
+                                                        {extraTimeDisplay}
+                                                    </div>
+                                                    <div className={`${progressClasses} overflow-hidden rounded-full border-2 ${accentClasses.border} bg-white`}>
+                                                        <div
+                                                            className={`h-full rounded-full ${accentClasses.bg} transition-all duration-1000 ease-linear`}
+                                                            style={{ width: `${extraProgressPercentage}%` }}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleMultiExtraTimeExpanded(timer.id)}
+                                                        className={`absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-md border ${accentClasses.border} bg-white/90 ${accentClasses.text} shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                                                        aria-label="Shrink extra time timer"
+                                                        title="Shrink extra time timer"
+                                                    >
+                                                        <ExpandToggleIcon collapsed size={17} />
+                                                    </button>
                                                 </div>
-                                                <div className={`mt-4 text-center font-mono ${readyTimers.length === 3 ? 'text-[clamp(5.25rem,7.8vw,9.2rem)]' : 'text-[clamp(5.75rem,9vw,12rem)]'} font-bold leading-none tracking-[0.04em] text-slate-900`}>
-                                                    {extraTimeDisplay}
-                                                </div>
-                                                <div className={`${progressClasses} overflow-hidden rounded-full border-2 ${accentClasses.border} bg-white`}>
-                                                    <div
-                                                        className={`h-full rounded-full ${accentClasses.bg} transition-all duration-1000 ease-linear`}
-                                                        style={{ width: `${extraProgressPercentage}%` }}
-                                                    />
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => toggleMultiExtraTimeExpanded(timer.id)}
-                                                    className={`absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-md border ${accentClasses.border} bg-white/90 ${accentClasses.text} shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                                                    aria-label="Shrink extra time timer"
-                                                    title="Shrink extra time timer"
-                                                >
-                                                    <ExpandToggleIcon collapsed size={17} />
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className={`flex flex-1 flex-col ${readyTimers.length === 3 ? 'justify-start pt-6' : 'justify-center'}`}>
-                                                <div className={`text-center ${officialTimeUp ? completeTextClasses : timerTextClasses} font-bold leading-none tracking-[0.04em] text-slate-900 ${officialTimeUp ? 'font-sans whitespace-nowrap text-red-500' : 'font-mono'}`}>
-                                                    {officialTimeUp ? "Time's Up!" : timerDisplayText}
-                                                </div>
+                                            ) : (
+                                                <div className={`flex flex-1 flex-col justify-center ${readyTimers.length === 3 ? 'pt-6' : ''}`}>
+                                                    <div className={`text-center ${officialTimeUp ? completeTextClasses : timerTextClasses} font-bold leading-none tracking-[0.04em] text-slate-900 ${officialTimeUp ? 'font-sans whitespace-nowrap text-red-500' : 'font-mono'}`}>
+                                                        {officialTimeUp ? "Time's Up!" : timerDisplayText}
+                                                    </div>
 
-                                                {timer.extraTimePercent > 0 && officialTimeUp && (
-                                                    <div className={`relative mx-auto mt-4 w-fit min-w-[18rem] rounded-lg border ${accentClasses.border} ${accentClasses.chip} px-14 py-2 text-center`}>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleMultiExtraTimeExpanded(timer.id)}
-                                                            className={`absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border ${accentClasses.border} bg-white/90 ${accentClasses.text} shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                                                            aria-label="Enlarge extra time timer"
-                                                            title="Enlarge extra time timer"
-                                                        >
-                                                            <ExpandToggleIcon size={15} />
-                                                        </button>
-                                                        <div className={`text-center text-sm font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
-                                                            {timer.timerState.phase === 'complete' ? 'Extra Time Finished' : 'Extra Time Remaining'}
+                                                    {timer.extraTimePercent > 0 && officialTimeUp && (
+                                                        <div className={`relative mx-auto mt-4 w-fit min-w-[18rem] rounded-lg border ${accentClasses.border} ${accentClasses.chip} px-14 py-2 text-center`}>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleMultiExtraTimeExpanded(timer.id)}
+                                                                className={`absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md border ${accentClasses.border} bg-white/90 ${accentClasses.text} shadow-sm transition-colors hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                                                                aria-label="Enlarge extra time timer"
+                                                                title="Enlarge extra time timer"
+                                                            >
+                                                                <ExpandToggleIcon size={15} />
+                                                            </button>
+                                                            <div className={`text-center text-sm font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                                {timer.timerState.phase === 'complete' ? 'Extra Time Finished' : 'Extra Time Remaining'}
+                                                            </div>
+                                                            <div className="font-mono text-3xl font-bold leading-none text-slate-900">
+                                                                {extraTimeDisplay}
+                                                            </div>
                                                         </div>
-                                                        <div className="font-mono text-3xl font-bold leading-none text-slate-900">
-                                                            {extraTimeDisplay}
+                                                    )}
+
+                                                    <div className={`${progressClasses} overflow-hidden rounded-full border-2 ${accentClasses.border} bg-white`}>
+                                                        <div
+                                                            className={`h-full rounded-full ${accentClasses.bg} transition-all duration-1000 ease-linear`}
+                                                            style={{ width: `${progressPercentage}%` }}
+                                                        />
+                                                    </div>
+
+                                                    <div className={timeRowClasses}>
+                                                        <div className={readyTimers.length === 3 ? 'grid grid-cols-[max-content_max-content] items-center justify-center gap-x-3' : undefined}>
+                                                            <span className={`${timeLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                                {readyTimers.length === 3 ? (
+                                                                    <>
+                                                                        Start<br />
+                                                                        Time:
+                                                                    </>
+                                                                ) : (
+                                                                    'Start Time:'
+                                                                )}
+                                                            </span>
+                                                            <span className={`font-mono ${timeValueClasses} font-bold leading-none text-slate-900`}>
+                                                                {startTime}
+                                                            </span>
+                                                        </div>
+                                                        <div className="h-10 w-px bg-slate-300" aria-hidden="true" />
+                                                        <div className={readyTimers.length === 3 ? 'grid grid-cols-[max-content_max-content] items-center justify-center gap-x-3' : undefined}>
+                                                            <span className={`${timeLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                                {readyTimers.length === 3 ? (
+                                                                    <>
+                                                                        Finish<br />
+                                                                        Time:
+                                                                    </>
+                                                                ) : (
+                                                                    'Finish Time:'
+                                                                )}
+                                                            </span>
+                                                            <span className={`font-mono ${timeValueClasses} font-bold leading-none text-slate-900`}>
+                                                                {finishTime}
+                                                            </span>
                                                         </div>
                                                     </div>
-                                                )}
+                                                </div>
+                                            )}
 
-                                                <div className={`${progressClasses} overflow-hidden rounded-full border-2 ${accentClasses.border} bg-white`}>
-                                                    <div
-                                                        className={`h-full rounded-full ${accentClasses.bg} transition-all duration-1000 ease-linear`}
-                                                        style={{ width: `${progressPercentage}%` }}
-                                                    />
+                                            <div className={`grid ${infoGridClasses} ${infoPanelHeightClasses} flex-none content-start border-t border-slate-300`}>
+                                                <div className={`border-b border-slate-200 ${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                    Exam:
+                                                </div>
+                                                <div className={`border-b border-slate-200 ${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
+                                                    {selectedTimerExam.name}
                                                 </div>
 
-                                                <div className={timeRowClasses}>
-                                                    <div className={readyTimers.length === 3 ? 'grid grid-cols-[max-content_max-content] items-center justify-center gap-x-3' : undefined}>
-                                                        <span className={`${timeLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
-                                                            {readyTimers.length === 3 ? (
-                                                                <>
-                                                                    Start<br />
-                                                                    Time:
-                                                                </>
-                                                            ) : (
-                                                                'Start Time:'
-                                                            )}
-                                                        </span>
-                                                        <span className={`font-mono ${timeValueClasses} font-bold leading-none text-slate-900`}>
-                                                            {startTime}
-                                                        </span>
-                                                    </div>
-                                                    <div className="h-10 w-px bg-slate-300" aria-hidden="true" />
-                                                    <div className={readyTimers.length === 3 ? 'grid grid-cols-[max-content_max-content] items-center justify-center gap-x-3' : undefined}>
-                                                        <span className={`${timeLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
-                                                            {readyTimers.length === 3 ? (
-                                                                <>
-                                                                    Finish<br />
-                                                                    Time:
-                                                                </>
-                                                            ) : (
-                                                                'Finish Time:'
-                                                            )}
-                                                        </span>
-                                                        <span className={`font-mono ${timeValueClasses} font-bold leading-none text-slate-900`}>
-                                                            {finishTime}
-                                                        </span>
-                                                    </div>
+                                                <div className={`border-b border-slate-200 ${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                    Paper:
+                                                </div>
+                                                <div className={`border-b border-slate-200 ${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
+                                                    {selectedTimerPaper.name}
+                                                </div>
+
+                                                <div className={`${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
+                                                    Duration:
+                                                </div>
+                                                <div className={`${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
+                                                    <span>
+                                                        {formatDuration(adjustedTimerPaper.durationMinutes)}{timer.extraTimePercent > 0 ? '*' : ''}
+                                                    </span>
+                                                    {timer.extraTimePercent > 0 && (
+                                                        <div className={`mt-1 text-[clamp(0.8rem,0.9vw,1.05rem)] font-semibold leading-tight ${accentClasses.text}`}>
+                                                            * Some candidates have {timer.extraTimePercent}% extra time
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
-                                        )}
-
-                                        <div className={`grid ${infoGridClasses} border-t border-slate-300`}>
-                                            <div className={`border-b border-slate-200 ${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
-                                                Exam:
-                                            </div>
-                                            <div className={`border-b border-slate-200 ${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
-                                                {selectedTimerExam.name}
-                                            </div>
-
-                                            <div className={`border-b border-slate-200 ${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
-                                                Paper:
-                                            </div>
-                                            <div className={`border-b border-slate-200 ${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
-                                                {selectedTimerPaper.name}
-                                            </div>
-
-                                            <div className={`${infoRowPadding} ${infoLabelClasses} font-semibold uppercase tracking-[0.08em] ${accentClasses.text}`}>
-                                                Duration:
-                                            </div>
-                                            <div className={`${infoRowPadding} ${infoValueClasses} font-semibold leading-tight text-slate-900`}>
-                                                <span>
-                                                    {formatDuration(adjustedTimerPaper.durationMinutes)}{timer.extraTimePercent > 0 ? '*' : ''}
-                                                </span>
-                                                {timer.extraTimePercent > 0 && (
-                                                    <div className={`mt-1 text-[clamp(0.8rem,0.9vw,1.05rem)] font-semibold leading-tight ${accentClasses.text}`}>
-                                                        * Some candidates have {timer.extraTimePercent}% extra time
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
+                                        </FitToBox>
                                     </section>
                                 );
                             }
@@ -1293,7 +1385,7 @@ const App: React.FC = () => {
                         })}
                     </main>
 
-                    <div className="flex h-[clamp(4.5rem,7vh,5.5rem)] flex-none items-center justify-center gap-[clamp(0.75rem,2vmin,2rem)] px-4">
+                    <div className="flex h-[clamp(5rem,8vh,6.25rem)] flex-none items-center justify-center gap-[clamp(0.75rem,2vmin,2rem)] px-4 pb-2 pt-1 max-sm:sticky max-sm:bottom-0 max-sm:z-20 max-sm:h-20 max-sm:bg-slate-100/95 max-sm:backdrop-blur">
                         <button
                             type="button"
                             onClick={handleToggleAllMultiTimers}
@@ -1326,7 +1418,7 @@ const App: React.FC = () => {
 
         return (
             <div 
-                className="h-screen h-[100dvh] bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden flex flex-col"
+                className="h-screen h-[100dvh] bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative flex flex-col overflow-hidden max-sm:h-auto max-sm:min-h-[100dvh] max-sm:overflow-y-auto"
                 role="application"
                 aria-label="Exam timer screen display"
             >
@@ -1346,10 +1438,10 @@ const App: React.FC = () => {
                     centreNumber={CENTRE_NUMBER}
                 />
 
-                <div className="relative z-10 flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+                <div className="relative z-10 flex-1 min-h-0 flex flex-col overflow-y-auto max-sm:overflow-visible md:flex-row md:overflow-hidden">
                 {/* Left Panel - Exam Information */}
                 <section 
-                    className="w-full md:w-1/2 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-4 sm:p-6 lg:p-8 xl:p-10 flex flex-col justify-center relative overflow-y-auto min-h-[14rem] md:min-h-0"
+                    className="w-full md:w-1/2 bg-gradient-to-br from-white via-blue-50 to-indigo-100 p-4 sm:p-6 lg:p-8 xl:p-10 flex flex-col justify-center relative overflow-y-auto min-h-[14rem] max-sm:min-h-[16rem] md:min-h-0"
                     aria-label="Exam information panel"
                 >
                     {/* Subtle background pattern */}
@@ -1382,7 +1474,7 @@ const App: React.FC = () => {
 
                 {/* Right Panel - Timer Display and Controls */}
                 <section 
-                    className="w-full md:w-1/2 bg-white flex flex-col justify-center items-center relative min-h-0"
+                    className="w-full md:w-1/2 bg-white flex flex-col justify-center items-center relative min-h-0 max-sm:min-h-[calc(100dvh-18rem)]"
                     aria-label="Timer display and controls"
                 >
                     {selectedExam && selectedPaper ? (
@@ -1482,7 +1574,7 @@ const App: React.FC = () => {
             <Header centreNumber={CENTRE_NUMBER} />
             
             {/* Main Content */}
-            <main id="main-content" className="max-w-4xl mx-auto p-4 sm:p-6">
+            <main id="main-content" className="max-w-4xl mx-auto p-3 sm:p-6">
                 <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 lg:p-8">
                     <div className="text-center mb-6 sm:mb-8">
                         <h2 className="text-lg sm:text-xl font-semibold text-slate-gray mb-4">
@@ -1556,7 +1648,7 @@ const App: React.FC = () => {
                                     />
                                 </div>
 
-                                <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-3">
+                                <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-3 max-sm:grid-cols-1">
                                     <label className={`inline-flex items-center gap-3 text-sm font-semibold ${selectedPaper ? 'text-slate-700' : 'text-slate-400'}`}>
                                         <input
                                             type="checkbox"
@@ -1656,7 +1748,7 @@ const App: React.FC = () => {
                                                     />
                                                 </div>
 
-                                                <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-3 md:col-span-2">
+                                                <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-3 max-sm:grid-cols-1 md:col-span-2">
                                                     <label className={`inline-flex items-center gap-3 text-sm font-semibold ${timer.selectedPaper ? 'text-slate-700' : 'text-slate-400'}`}>
                                                         <input
                                                             type="checkbox"
