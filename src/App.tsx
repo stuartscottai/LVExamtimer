@@ -1,6 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
+import { Font, FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
+import segoeUiBoldFontData from './assets/fonts/segoe-ui-bold.typeface.json';
+import segoeUiRegularFontData from './assets/fonts/segoe-ui-regular.typeface.json';
+import worldLandGeoJson from './data/world-land-geometry.json';
 import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, ExpandToggleIcon, PauseIcon, PlayIcon, ResetIcon } from './components';
 import { CAMBRIDGE_EXAMS, CENTRE_NUMBER, MULTIPLE_EXAM_OPTIONS } from './constants';
 import { Exam, Paper, TimerState } from './types';
@@ -196,22 +201,131 @@ interface WelcomePageDisplayProps {
     isFullscreenActive: boolean;
 }
 
-const createLogoGlobeTexture = (): THREE.CanvasTexture => {
+type GeoJsonRing = number[][];
+type GeoJsonPolygon = GeoJsonRing[];
+type GeoJsonMultiPolygon = GeoJsonPolygon[];
+
+interface LandFeature {
+    geometry: {
+        type: 'Polygon' | 'MultiPolygon';
+        coordinates: GeoJsonPolygon | GeoJsonMultiPolygon;
+    };
+}
+
+const loadTextureImage = (src: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Could not load globe texture: ${src}`));
+    image.src = src;
+});
+
+const createLogoGlobeTexture = async (): Promise<THREE.CanvasTexture> => {
     const canvas = document.createElement('canvas');
     canvas.width = 2048;
     canvas.height = 1024;
     const context = canvas.getContext('2d');
-    const lineGrey = 'rgba(148, 163, 184, 0.58)';
+    const lineGrey = 'rgba(226, 232, 240, 0.28)';
 
     if (!context) {
         return new THREE.CanvasTexture(canvas);
     }
 
-    context.fillStyle = '#2563eb';
+    const earthImage = await loadTextureImage('/textures/earth-atmos-2048.jpg');
+
+    context.save();
+    context.filter = 'blur(0.7px) brightness(0.98) saturate(0.82)';
+    context.drawImage(earthImage, 0, 0, canvas.width, canvas.height);
+    context.restore();
+
+    const sourceImageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const sourceData = sourceImageData.data;
+    const clamp = (value: number, minimum: number, maximum: number) => Math.min(Math.max(value, minimum), maximum);
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = canvas.width;
+    maskCanvas.height = canvas.height;
+    const maskContext = maskCanvas.getContext('2d');
+
+    if (maskContext) {
+        const projectPoint = ([longitude, latitude]: number[]) => ({
+            x: ((longitude + 180) / 360) * canvas.width,
+            y: ((90 - latitude) / 180) * canvas.height
+        });
+
+        const drawRing = (ring: GeoJsonRing) => {
+            ring.forEach((coordinate, coordinateIndex) => {
+                const point = projectPoint(coordinate);
+
+                if (coordinateIndex === 0) {
+                    maskContext.moveTo(point.x, point.y);
+                    return;
+                }
+
+                const previousPoint = projectPoint(ring[coordinateIndex - 1]);
+
+                if (Math.abs(point.x - previousPoint.x) > canvas.width / 2) {
+                    maskContext.moveTo(point.x, point.y);
+                    return;
+                }
+
+                maskContext.lineTo(point.x, point.y);
+            });
+        };
+
+        const drawPolygon = (polygon: GeoJsonPolygon) => {
+            maskContext.beginPath();
+            polygon.forEach(drawRing);
+            maskContext.fill();
+        };
+
+        maskContext.fillStyle = '#ffffff';
+        (worldLandGeoJson.features as LandFeature[]).forEach(feature => {
+            if (feature.geometry.type === 'Polygon') {
+                drawPolygon(feature.geometry.coordinates as GeoJsonPolygon);
+                return;
+            }
+
+            (feature.geometry.coordinates as GeoJsonMultiPolygon).forEach(drawPolygon);
+        });
+    }
+
+    const maskData = maskContext?.getImageData(0, 0, canvas.width, canvas.height).data;
+    const globeImageData = context.createImageData(canvas.width, canvas.height);
+    const { data } = globeImageData;
+
+    for (let index = 0; index < data.length; index += 4) {
+        const red = sourceData[index];
+        const green = sourceData[index + 1];
+        const blue = sourceData[index + 2];
+        const brightness = (red + green + blue) / 3;
+        const contrast = Math.max(red, green, blue) - Math.min(red, green, blue);
+        const textureVariation = clamp((brightness - 42) / 142, 0, 1);
+        const fineVariation = clamp(contrast / 105, 0, 1);
+        const isLand = maskData ? maskData[index + 3] > 0 : false;
+
+        if (isLand) {
+            data[index] = Math.round(43 + textureVariation * 18 + fineVariation * 5);
+            data[index + 1] = Math.round(48 + textureVariation * 18 + fineVariation * 5);
+            data[index + 2] = Math.round(55 + textureVariation * 18 + fineVariation * 5);
+        } else {
+            data[index] = Math.round(20 + textureVariation * 20);
+            data[index + 1] = Math.round(85 + textureVariation * 34);
+            data[index + 2] = Math.round(190 + textureVariation * 42);
+        }
+
+        data[index + 3] = 255;
+    }
+
+    context.putImageData(globeImageData, 0, 0);
+
+    context.save();
+    context.globalCompositeOperation = 'soft-light';
+    context.fillStyle = 'rgba(147, 197, 253, 0.1)';
     context.fillRect(0, 0, canvas.width, canvas.height);
+    context.restore();
 
     context.strokeStyle = lineGrey;
-    context.lineWidth = 10;
+    context.lineWidth = 4;
     context.lineCap = 'round';
     context.lineJoin = 'round';
 
@@ -235,66 +349,9 @@ const createLogoGlobeTexture = (): THREE.CanvasTexture => {
         drawHorizontal(canvas.height * yPosition);
     });
 
-    const logoPositions = [0.25, 0.75];
-
     for (let index = 0; index < 8; index += 1) {
         drawVertical(canvas.width * (index / 8));
     }
-
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillStyle = '#ffffff';
-
-    const measureSpacedText = (text: string, font: string, letterSpacing: number) => {
-        context.font = font;
-        return Array.from(text).reduce((width, character, index) => (
-            width + context.measureText(character).width + (index > 0 ? letterSpacing : 0)
-        ), 0);
-    };
-
-    const drawSpacedText = (text: string, x: number, y: number, font: string, letterSpacing: number) => {
-        const characters = Array.from(text);
-        let currentX = x;
-        context.font = font;
-        context.textAlign = 'left';
-
-        characters.forEach((character, index) => {
-            if (index > 0) {
-                currentX += letterSpacing;
-            }
-            context.fillText(character, currentX, y);
-            currentX += context.measureText(character).width;
-        });
-
-        context.textAlign = 'center';
-    };
-
-    logoPositions.forEach(xPosition => {
-        const textX = canvas.width * xPosition;
-        const primaryFont = '900 70px Arial, Helvetica, sans-serif';
-        const secondaryFont = '300 48px Arial, Helvetica, sans-serif';
-        const examsFont = '900 48px Arial, Helvetica, sans-serif';
-        const secondarySpacing = 8;
-
-        context.font = primaryFont;
-        context.letterSpacing = '10px';
-        context.fillText('LENGUAS VIVAS', textX, canvas.height * 0.36);
-
-        context.font = secondaryFont;
-        context.letterSpacing = `${secondarySpacing}px`;
-        context.fillText('YOUR CAMBRIDGE', textX, canvas.height * 0.445);
-
-        context.letterSpacing = '0px';
-        const examsText = 'EXAMS';
-        const centreText = ' CENTRE';
-        const examsWidth = measureSpacedText(examsText, examsFont, secondarySpacing);
-        const centreWidth = measureSpacedText(centreText, secondaryFont, secondarySpacing);
-        const lineStart = textX - ((examsWidth + centreWidth) / 2);
-        const lineY = canvas.height * 0.575;
-
-        drawSpacedText(examsText, lineStart, lineY, examsFont, secondarySpacing);
-        drawSpacedText(centreText, lineStart + examsWidth, lineY, secondaryFont, secondarySpacing);
-    });
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -304,6 +361,126 @@ const createLogoGlobeTexture = (): THREE.CanvasTexture => {
     texture.needsUpdate = true;
 
     return texture;
+};
+
+const createTextGeometry = (text: string, font: Font, size: number, depth: number) => {
+    const geometry = new TextGeometry(text, {
+        font,
+        size,
+        depth,
+        curveSegments: 6,
+        bevelEnabled: true,
+        bevelThickness: depth * 0.08,
+        bevelSize: depth * 0.05,
+        bevelSegments: 1
+    });
+
+    geometry.computeBoundingBox();
+    const boundingBox = geometry.boundingBox;
+
+    if (boundingBox) {
+        const xOffset = -((boundingBox.max.x - boundingBox.min.x) / 2);
+        const yOffset = -((boundingBox.max.y - boundingBox.min.y) / 2);
+        geometry.translate(xOffset, yOffset, 0);
+    }
+
+    geometry.computeVertexNormals();
+
+    return geometry;
+};
+
+interface CurvedTextSegment {
+    text: string;
+    font: Font;
+    size?: number;
+    material?: THREE.Material;
+}
+
+const createRaisedLogoText = (boldFont: Font, regularFont: Font, centerLongitude = 0) => {
+    const group = new THREE.Group();
+    const emphasisMaterial = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        emissive: new THREE.Color(0x1d4ed8),
+        emissiveIntensity: 0.025,
+        shininess: 46,
+        specular: new THREE.Color(0xdbeafe)
+    });
+    const supportingMaterial = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        emissive: new THREE.Color(0x1d4ed8),
+        emissiveIntensity: 0.018,
+        shininess: 38,
+        specular: new THREE.Color(0xdbeafe)
+    });
+    const textDepth = 0.018;
+    const textRadius = 1.884;
+    const lineSpacing = 0.04;
+
+    const addCurvedTextLine = (segments: CurvedTextSegment[], latitudeDegrees: number, defaultSize: number) => {
+        const latitude = THREE.MathUtils.degToRad(latitudeDegrees);
+        const characters = segments.flatMap(segment =>
+            [...segment.text].map(character => ({
+                character,
+                font: segment.font,
+                size: segment.size ?? defaultSize,
+                material: segment.material ?? emphasisMaterial
+            }))
+        );
+        const measuredCharacters = characters.map(({ character, font, size, material }) => {
+            const measureGeometry = createTextGeometry(character === ' ' ? 'I' : character, font, size, textDepth);
+            measureGeometry.computeBoundingBox();
+            const width = measureGeometry.boundingBox
+                ? measureGeometry.boundingBox.max.x - measureGeometry.boundingBox.min.x
+                : size * 0.48;
+            measureGeometry.dispose();
+
+            return {
+                character,
+                font,
+                size,
+                material,
+                width: character === ' ' ? size * 0.38 : width
+            };
+        });
+        const totalArc = measuredCharacters.reduce((sum, item) => sum + item.width + lineSpacing, 0) - lineSpacing;
+        let currentArc = -(totalArc / 2);
+
+        measuredCharacters.forEach(({ character, font, size, material, width }) => {
+            const characterArcCenter = currentArc + (width / 2);
+            const longitude = centerLongitude + (characterArcCenter / (textRadius * Math.cos(latitude)));
+            currentArc += width + lineSpacing;
+
+            if (character === ' ') {
+                return;
+            }
+
+            const geometry = createTextGeometry(character, font, size, textDepth);
+            const mesh = new THREE.Mesh(geometry, material);
+            const cosLatitude = Math.cos(latitude);
+            const normal = new THREE.Vector3(
+                Math.sin(longitude) * cosLatitude,
+                Math.sin(latitude),
+                Math.cos(longitude) * cosLatitude
+            ).normalize();
+            const position = normal.clone().multiplyScalar(textRadius);
+            const xAxis = new THREE.Vector3(Math.cos(longitude), 0, -Math.sin(longitude)).normalize();
+            const yAxis = new THREE.Vector3().crossVectors(normal, xAxis).normalize();
+            const orientation = new THREE.Matrix4().makeBasis(xAxis, yAxis, normal);
+
+            mesh.position.copy(position);
+            mesh.quaternion.setFromRotationMatrix(orientation);
+            group.add(mesh);
+        });
+    };
+
+    addCurvedTextLine([{ text: 'LENGUAS VIVAS', font: boldFont, size: 0.486, material: emphasisMaterial }], 27, 0.486);
+    addCurvedTextLine([{ text: 'YOUR CAMBRIDGE', font: regularFont, size: 0.372, material: supportingMaterial }], 9, 0.372);
+    addCurvedTextLine([
+        { text: 'EXAMS', font: boldFont, size: 0.426, material: emphasisMaterial },
+        { text: ' CENTRE', font: regularFont, size: 0.372, material: supportingMaterial }
+    ], -9, 0.372);
+
+    return { group, materials: [emphasisMaterial, supportingMaterial] };
 };
 
 const WelcomeGlobe: React.FC = () => {
@@ -325,21 +502,69 @@ const WelcomeGlobe: React.FC = () => {
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         mount.appendChild(renderer.domElement);
 
-        const texture = createLogoGlobeTexture();
+        const placeholderCanvas = document.createElement('canvas');
+        placeholderCanvas.width = 16;
+        placeholderCanvas.height = 8;
+        const placeholderContext = placeholderCanvas.getContext('2d');
+        if (placeholderContext) {
+            placeholderContext.fillStyle = '#2563eb';
+            placeholderContext.fillRect(0, 0, placeholderCanvas.width, placeholderCanvas.height);
+        }
+        const placeholderTexture = new THREE.CanvasTexture(placeholderCanvas);
         const geometry = new THREE.SphereGeometry(1.88, 128, 80);
         const material = new THREE.MeshPhongMaterial({
-            map: texture,
-            shininess: 18,
-            specular: new THREE.Color(0x60a5fa),
+            map: placeholderTexture,
+            shininess: 14,
+            specular: new THREE.Color(0x334155),
             color: 0xffffff
         });
         const globe = new THREE.Mesh(geometry, material);
-        globe.rotation.y = 0;
+        const cloudTexture = new THREE.TextureLoader().load('/textures/earth-clouds-1024.png');
+        cloudTexture.colorSpace = THREE.SRGBColorSpace;
+        const cloudGeometry = new THREE.SphereGeometry(1.882, 128, 80);
+        const cloudMaterial = new THREE.MeshPhongMaterial({
+            map: cloudTexture,
+            transparent: true,
+            opacity: 0.18,
+            depthWrite: false,
+            color: 0xffffff,
+            shininess: 4
+        });
+        const cloudLayer = new THREE.Mesh(cloudGeometry, cloudMaterial);
+        globe.add(cloudLayer);
+        const pacificLogoOffset = THREE.MathUtils.degToRad(95);
+        globe.rotation.y = -(pacificLogoOffset + Math.PI);
+        let texture: THREE.CanvasTexture | null = null;
+        let isDisposed = false;
+
+        createLogoGlobeTexture()
+            .then(loadedTexture => {
+                if (isDisposed) {
+                    loadedTexture.dispose();
+                    return;
+                }
+
+                texture = loadedTexture;
+                material.map = loadedTexture;
+                material.needsUpdate = true;
+                placeholderTexture.dispose();
+            })
+            .catch(error => {
+                console.error(error);
+            });
+
+        const fontLoader = new FontLoader();
+        const boldFont = fontLoader.parse(segoeUiBoldFontData);
+        const regularFont = fontLoader.parse(segoeUiRegularFontData);
+        const frontLogoText = createRaisedLogoText(boldFont, regularFont, pacificLogoOffset);
+        const backLogoText = createRaisedLogoText(boldFont, regularFont, pacificLogoOffset + Math.PI);
+        globe.add(frontLogoText.group);
+        globe.add(backLogoText.group);
         scene.add(globe);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.82));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.74));
 
-        const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
         keyLight.position.set(3, 3.5, 5);
         scene.add(keyLight);
 
@@ -371,12 +596,29 @@ const WelcomeGlobe: React.FC = () => {
         animate();
 
         return () => {
+            isDisposed = true;
             cancelAnimationFrame(animationFrame);
             resizeObserver?.disconnect();
             mount.removeChild(renderer.domElement);
+            frontLogoText.group.traverse(object => {
+                if (object instanceof THREE.Mesh) {
+                    object.geometry.dispose();
+                }
+            });
+            backLogoText.group.traverse(object => {
+                if (object instanceof THREE.Mesh) {
+                    object.geometry.dispose();
+                }
+            });
+            frontLogoText.materials.forEach(materialItem => materialItem.dispose());
+            backLogoText.materials.forEach(materialItem => materialItem.dispose());
+            cloudGeometry.dispose();
+            cloudMaterial.dispose();
+            cloudTexture.dispose();
             geometry.dispose();
             material.dispose();
-            texture.dispose();
+            texture?.dispose();
+            placeholderTexture.dispose();
             renderer.dispose();
         };
     }, []);
@@ -400,12 +642,11 @@ const WelcomePageDisplay: React.FC<WelcomePageDisplayProps> = ({
     isFullscreenActive
 }) => (
     <div className="welcome-smoke-bg relative grid h-full min-h-0 w-full grid-cols-1 overflow-hidden md:grid-cols-2">
-        <div className="pointer-events-none absolute inset-0 z-0 bg-blue-950/10" aria-hidden="true" />
         <div className="absolute right-5 top-5 z-20 flex flex-col items-center gap-3">
             <button
                 type="button"
                 onClick={onBackToHome}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-blue-600/85 text-white shadow-md transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/90 text-blue-700 shadow-md shadow-blue-900/15 transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                 aria-label="Back to home screen"
                 title="Back to home screen"
             >
@@ -429,7 +670,7 @@ const WelcomePageDisplay: React.FC<WelcomePageDisplayProps> = ({
             <button
                 type="button"
                 onClick={onToggleFullscreen}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-blue-600/85 text-white shadow-md transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-white/90 text-blue-700 shadow-md shadow-blue-900/15 transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                 aria-label={isFullscreenActive ? 'Exit full-screen mode' : 'Enter full-screen mode'}
                 title={isFullscreenActive ? 'Exit full-screen mode' : 'Enter full-screen mode'}
             >
@@ -460,7 +701,7 @@ const WelcomePageDisplay: React.FC<WelcomePageDisplayProps> = ({
             type="button"
             onClick={onNext}
             disabled={!canGoNext}
-            className="absolute bottom-8 right-8 z-20 inline-flex h-[clamp(3.2rem,6vmin,5rem)] w-[clamp(3.2rem,6vmin,5rem)] items-center justify-center rounded-lg bg-white/0 text-white shadow-[0_0.2rem_0.38rem_rgba(15,23,42,0.32)] transition-all duration-150 hover:scale-105 hover:bg-white/15 hover:text-blue-100 focus:outline-none focus:ring-2 focus:ring-white/80 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            className="absolute bottom-8 right-8 z-20 inline-flex h-[clamp(3.2rem,6vmin,5rem)] w-[clamp(3.2rem,6vmin,5rem)] items-center justify-center rounded-lg bg-white/0 text-blue-700 shadow-[0_0.2rem_0.38rem_rgba(30,64,175,0.28)] transition-all duration-150 hover:scale-105 hover:bg-blue-50/75 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/80 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Next paper"
             title="Next paper"
         >
@@ -482,10 +723,10 @@ const WelcomePageDisplay: React.FC<WelcomePageDisplayProps> = ({
             </svg>
         </button>
 
-        <section className="relative z-10 flex min-h-[16rem] flex-col items-center justify-center p-8 text-white">
+        <section className="relative z-10 flex min-h-[16rem] flex-col items-center justify-center p-8 text-blue-700">
             <WelcomeGlobe />
-            <div className="mt-10 border-t border-white/45 pt-8 text-center drop-shadow-[0_0.2rem_0.9rem_rgba(15,23,42,0.28)]">
-                <div className="text-[clamp(1rem,2vw,1.4rem)] font-semibold uppercase tracking-[0.06em] text-white/85">
+            <div className="mt-10 border-t border-blue-500/35 pt-8 text-center drop-shadow-[0_0.2rem_0.9rem_rgba(29,78,216,0.14)]">
+                <div className="text-[clamp(1rem,2vw,1.4rem)] font-semibold uppercase tracking-[0.06em] text-blue-700/80">
                     Centre Number
                 </div>
                 <div className="mt-2 text-[clamp(2.4rem,5vw,4.6rem)] font-bold leading-none">
@@ -496,11 +737,11 @@ const WelcomePageDisplay: React.FC<WelcomePageDisplayProps> = ({
 
         <section className="relative z-10 flex min-h-[20rem] flex-col items-center justify-center p-8 text-center">
             <div className="max-w-4xl">
-                <h1 className="text-[clamp(3rem,6vw,7.5rem)] font-bold leading-[1.02] text-white drop-shadow-[0_0.22rem_0.9rem_rgba(15,23,42,0.34)]">
+                <h1 className="text-[clamp(3rem,6vw,7.5rem)] font-bold leading-[1.02] text-blue-950 drop-shadow-[0_0.22rem_0.9rem_rgba(255,255,255,0.62)]">
                     Welcome to your Cambridge Exam
                 </h1>
-                <div className="mx-auto mt-8 h-px w-[min(28rem,62%)] bg-white/45" aria-hidden="true" />
-                <div className="mt-8 text-[clamp(2.2rem,4.6vw,5.5rem)] font-semibold leading-tight text-blue-100 drop-shadow-[0_0.18rem_0.75rem_rgba(15,23,42,0.32)]">
+                <div className="mx-auto mt-8 h-px w-[min(28rem,62%)] bg-blue-500/35" aria-hidden="true" />
+                <div className="mt-8 text-[clamp(2.2rem,4.6vw,5.5rem)] font-semibold leading-tight text-blue-700 drop-shadow-[0_0.18rem_0.75rem_rgba(255,255,255,0.72)]">
                     {examName}
                 </div>
             </div>

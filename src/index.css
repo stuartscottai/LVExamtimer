@@ -34,9 +34,9 @@
 
 .welcome-smoke-bg {
     background:
-        linear-gradient(rgba(29, 78, 216, 0.08), rgba(30, 64, 175, 0.18)),
-        url('/welcome-wispy-bg.png') center / cover no-repeat,
-        #1d4ed8;
+        linear-gradient(rgba(255, 255, 255, 0.16), rgba(219, 234, 254, 0.2)),
+        url('/welcome-wispy-bg-light.png') center / cover no-repeat,
+        #f8fbff;
 }
 
 .welcome-logo-globe {
@@ -45,7 +45,7 @@
     display: grid;
     place-items: center;
     border-radius: 9999px;
-    filter: drop-shadow(0 1.7rem 3.4rem rgba(30, 64, 175, 0.26));
+    filter: drop-shadow(0 1.7rem 3.4rem rgba(30, 64, 175, 0.18));
 }
 
 .welcome-logo-globe canvas {
