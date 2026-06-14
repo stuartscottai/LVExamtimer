@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as THREE from 'three';
 import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, ExpandToggleIcon, PauseIcon, PlayIcon, ResetIcon } from './components';
 import { CAMBRIDGE_EXAMS, CENTRE_NUMBER, MULTIPLE_EXAM_OPTIONS } from './constants';
 import { Exam, Paper, TimerState } from './types';
@@ -16,6 +17,12 @@ interface MultiTimerSession {
     extraTimePercent: ExtraTimePercent;
     timerState: TimerState;
     pausedRemainingMs: number | null;
+}
+
+interface SinglePaperTimerSession {
+    timerState: TimerState;
+    pausedRemainingMs: number | null;
+    hasTimerCompleted: boolean;
 }
 
 interface FitToBoxProps {
@@ -105,6 +112,402 @@ const FitToBox: React.FC<FitToBoxProps> = ({ children }) => {
     );
 };
 
+interface PaperNavigationControlsProps {
+    onPrevious: () => void;
+    onNext: () => void;
+    canGoPrevious: boolean;
+    canGoNext: boolean;
+    className?: string;
+}
+
+const PaperNavigationControls: React.FC<PaperNavigationControlsProps> = ({
+    onPrevious,
+    onNext,
+    canGoPrevious,
+    canGoNext,
+    className = ''
+}) => {
+    const buttonClasses = 'pointer-events-auto inline-flex h-[clamp(2.75rem,7vmin,5rem)] w-[clamp(2.75rem,7vmin,5rem)] items-center justify-center rounded-lg bg-white/0 text-blue-600 shadow-[0_0.18rem_0.35rem_rgba(15,23,42,0.22)] transition-all duration-150 hover:scale-105 hover:bg-white/20 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-35';
+    const iconSize = 'clamp(2.2rem,5.2vmin,4.2rem)';
+
+    return (
+        <div className={`flex items-center justify-center gap-[clamp(0.75rem,2vmin,2rem)] ${className}`}>
+            <button
+                type="button"
+                onClick={onPrevious}
+                disabled={!canGoPrevious}
+                className={buttonClasses}
+                aria-label="Previous paper"
+                title="Previous paper"
+            >
+                <svg
+                    width={iconSize}
+                    height={iconSize}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                >
+                    <path
+                        d="M15 18L9 12L15 6"
+                        stroke="currentColor"
+                        strokeWidth="2.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+            </button>
+            <button
+                type="button"
+                onClick={onNext}
+                disabled={!canGoNext}
+                className={buttonClasses}
+                aria-label="Next paper"
+                title="Next paper"
+            >
+                <svg
+                    width={iconSize}
+                    height={iconSize}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                >
+                    <path
+                        d="M9 18L15 12L9 6"
+                        stroke="currentColor"
+                        strokeWidth="2.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+            </button>
+        </div>
+    );
+};
+
+interface WelcomePageDisplayProps {
+    examName: string;
+    centreNumber: string;
+    onNext: () => void;
+    onBackToHome: () => void;
+    onToggleFullscreen: () => void;
+    canGoNext: boolean;
+    isFullscreenActive: boolean;
+}
+
+const createLogoGlobeTexture = (): THREE.CanvasTexture => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 1024;
+    const context = canvas.getContext('2d');
+    const lineGrey = 'rgba(148, 163, 184, 0.58)';
+
+    if (!context) {
+        return new THREE.CanvasTexture(canvas);
+    }
+
+    context.fillStyle = '#2563eb';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    context.strokeStyle = lineGrey;
+    context.lineWidth = 10;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+
+    const drawHorizontal = (y: number) => {
+        context.beginPath();
+        context.moveTo(0, y);
+        context.lineTo(canvas.width, y);
+        context.stroke();
+    };
+
+    const drawVertical = (x: number) => {
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, canvas.height);
+        context.stroke();
+    };
+
+    // Three.js bends the texture around the sphere, so the texture itself
+    // should use straight, symmetrical latitude and longitude lines.
+    [0.26, 0.5, 0.74].forEach(yPosition => {
+        drawHorizontal(canvas.height * yPosition);
+    });
+
+    const logoPositions = [0.25, 0.75];
+
+    for (let index = 0; index < 8; index += 1) {
+        drawVertical(canvas.width * (index / 8));
+    }
+
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillStyle = '#ffffff';
+
+    const measureSpacedText = (text: string, font: string, letterSpacing: number) => {
+        context.font = font;
+        return Array.from(text).reduce((width, character, index) => (
+            width + context.measureText(character).width + (index > 0 ? letterSpacing : 0)
+        ), 0);
+    };
+
+    const drawSpacedText = (text: string, x: number, y: number, font: string, letterSpacing: number) => {
+        const characters = Array.from(text);
+        let currentX = x;
+        context.font = font;
+        context.textAlign = 'left';
+
+        characters.forEach((character, index) => {
+            if (index > 0) {
+                currentX += letterSpacing;
+            }
+            context.fillText(character, currentX, y);
+            currentX += context.measureText(character).width;
+        });
+
+        context.textAlign = 'center';
+    };
+
+    logoPositions.forEach(xPosition => {
+        const textX = canvas.width * xPosition;
+        const primaryFont = '900 70px Arial, Helvetica, sans-serif';
+        const secondaryFont = '300 48px Arial, Helvetica, sans-serif';
+        const examsFont = '900 48px Arial, Helvetica, sans-serif';
+        const secondarySpacing = 8;
+
+        context.font = primaryFont;
+        context.letterSpacing = '10px';
+        context.fillText('LENGUAS VIVAS', textX, canvas.height * 0.36);
+
+        context.font = secondaryFont;
+        context.letterSpacing = `${secondarySpacing}px`;
+        context.fillText('YOUR CAMBRIDGE', textX, canvas.height * 0.445);
+
+        context.letterSpacing = '0px';
+        const examsText = 'EXAMS';
+        const centreText = ' CENTRE';
+        const examsWidth = measureSpacedText(examsText, examsFont, secondarySpacing);
+        const centreWidth = measureSpacedText(centreText, secondaryFont, secondarySpacing);
+        const lineStart = textX - ((examsWidth + centreWidth) / 2);
+        const lineY = canvas.height * 0.575;
+
+        drawSpacedText(examsText, lineStart, lineY, examsFont, secondarySpacing);
+        drawSpacedText(centreText, lineStart + examsWidth, lineY, secondaryFont, secondarySpacing);
+    });
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.anisotropy = 8;
+    texture.needsUpdate = true;
+
+    return texture;
+};
+
+const WelcomeGlobe: React.FC = () => {
+    const mountRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const mount = mountRef.current;
+
+        if (!mount) {
+            return;
+        }
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+        camera.position.set(0, 0, 8.6);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        renderer.setClearColor(0x000000, 0);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        mount.appendChild(renderer.domElement);
+
+        const texture = createLogoGlobeTexture();
+        const geometry = new THREE.SphereGeometry(1.88, 128, 80);
+        const material = new THREE.MeshPhongMaterial({
+            map: texture,
+            shininess: 18,
+            specular: new THREE.Color(0x60a5fa),
+            color: 0xffffff
+        });
+        const globe = new THREE.Mesh(geometry, material);
+        globe.rotation.y = 0;
+        scene.add(globe);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.82));
+
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
+        keyLight.position.set(3, 3.5, 5);
+        scene.add(keyLight);
+
+        const fillLight = new THREE.DirectionalLight(0x60a5fa, 0.6);
+        fillLight.position.set(-4, -1, 3);
+        scene.add(fillLight);
+
+        let animationFrame = 0;
+
+        const resize = () => {
+            const size = Math.max(1, Math.min(mount.clientWidth, mount.clientHeight));
+            renderer.setSize(size, size, false);
+            camera.aspect = 1;
+            camera.updateProjectionMatrix();
+        };
+
+        const animate = () => {
+            globe.rotation.y -= 0.003;
+            renderer.render(scene, camera);
+            animationFrame = requestAnimationFrame(animate);
+        };
+
+        const resizeObserver = typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(resize)
+            : null;
+
+        resizeObserver?.observe(mount);
+        resize();
+        animate();
+
+        return () => {
+            cancelAnimationFrame(animationFrame);
+            resizeObserver?.disconnect();
+            mount.removeChild(renderer.domElement);
+            geometry.dispose();
+            material.dispose();
+            texture.dispose();
+            renderer.dispose();
+        };
+    }, []);
+
+    return (
+        <div
+            ref={mountRef}
+            className="welcome-logo-globe"
+            aria-label="Lenguas Vivas Your Cambridge Exams Centre rotating logo globe"
+        />
+    );
+};
+
+const WelcomePageDisplay: React.FC<WelcomePageDisplayProps> = ({
+    examName,
+    centreNumber,
+    onNext,
+    onBackToHome,
+    onToggleFullscreen,
+    canGoNext,
+    isFullscreenActive
+}) => (
+    <div className="welcome-smoke-bg relative grid h-full min-h-0 w-full grid-cols-1 overflow-hidden md:grid-cols-2">
+        <div className="pointer-events-none absolute inset-0 z-0 bg-blue-950/10" aria-hidden="true" />
+        <div className="absolute right-5 top-5 z-20 flex flex-col items-center gap-3">
+            <button
+                type="button"
+                onClick={onBackToHome}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-blue-600/85 text-white shadow-md transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                aria-label="Back to home screen"
+                title="Back to home screen"
+            >
+                <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                >
+                    <path
+                        d="M4 11.5L12 5L20 11.5V20H14.5V14.5H9.5V20H4V11.5Z"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                </svg>
+            </button>
+            <button
+                type="button"
+                onClick={onToggleFullscreen}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-blue-600/85 text-white shadow-md transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                aria-label={isFullscreenActive ? 'Exit full-screen mode' : 'Enter full-screen mode'}
+                title={isFullscreenActive ? 'Exit full-screen mode' : 'Enter full-screen mode'}
+            >
+                {isFullscreenActive ? (
+                    <span className="text-xl font-bold leading-none">{'\u2715'}</span>
+                ) : (
+                    <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M4 9V4H9M15 4H20V9M20 15V20H15M9 20H4V15"
+                            stroke="currentColor"
+                            strokeWidth="1.9"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        />
+                    </svg>
+                )}
+            </button>
+        </div>
+
+        <button
+            type="button"
+            onClick={onNext}
+            disabled={!canGoNext}
+            className="absolute bottom-8 right-8 z-20 inline-flex h-[clamp(3.2rem,6vmin,5rem)] w-[clamp(3.2rem,6vmin,5rem)] items-center justify-center rounded-lg bg-white/0 text-white shadow-[0_0.2rem_0.38rem_rgba(15,23,42,0.32)] transition-all duration-150 hover:scale-105 hover:bg-white/15 hover:text-blue-100 focus:outline-none focus:ring-2 focus:ring-white/80 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Next paper"
+            title="Next paper"
+        >
+            <svg
+                width="clamp(2.4rem,5.4vmin,4.4rem)"
+                height="clamp(2.4rem,5.4vmin,4.4rem)"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+            >
+                <path
+                    d="M9 18L15 12L9 6"
+                    stroke="currentColor"
+                    strokeWidth="2.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+            </svg>
+        </button>
+
+        <section className="relative z-10 flex min-h-[16rem] flex-col items-center justify-center p-8 text-white">
+            <WelcomeGlobe />
+            <div className="mt-10 border-t border-white/45 pt-8 text-center drop-shadow-[0_0.2rem_0.9rem_rgba(15,23,42,0.28)]">
+                <div className="text-[clamp(1rem,2vw,1.4rem)] font-semibold uppercase tracking-[0.06em] text-white/85">
+                    Centre Number
+                </div>
+                <div className="mt-2 text-[clamp(2.4rem,5vw,4.6rem)] font-bold leading-none">
+                    {centreNumber}
+                </div>
+            </div>
+        </section>
+
+        <section className="relative z-10 flex min-h-[20rem] flex-col items-center justify-center p-8 text-center">
+            <div className="max-w-4xl">
+                <h1 className="text-[clamp(3rem,6vw,7.5rem)] font-bold leading-[1.02] text-white drop-shadow-[0_0.22rem_0.9rem_rgba(15,23,42,0.34)]">
+                    Welcome to your Cambridge Exam
+                </h1>
+                <div className="mx-auto mt-8 h-px w-[min(28rem,62%)] bg-white/45" aria-hidden="true" />
+                <div className="mt-8 text-[clamp(2.2rem,4.6vw,5.5rem)] font-semibold leading-tight text-blue-100 drop-shadow-[0_0.18rem_0.75rem_rgba(15,23,42,0.32)]">
+                    {examName}
+                </div>
+            </div>
+        </section>
+    </div>
+);
+
 const createInitialTimerState = (): TimerState => ({
     timeRemaining: 0,
     extraTimeRemaining: 0,
@@ -131,6 +534,13 @@ const EXTRA_TIME_OPTIONS: Array<{ label: string; value: ExtraTimePercent }> = [
     { label: '100% extra time', value: 100 }
 ];
 
+const WELCOME_PAGE_NAME = 'Welcome page';
+const WELCOME_PAGE_PAPER: Paper = {
+    name: WELCOME_PAGE_NAME,
+    durationMinutes: 0,
+    isWelcomePage: true
+};
+
 const getExtraTimeLabel = (percent: ExtraTimePercent): string => (
     EXTRA_TIME_OPTIONS.find(option => option.value === percent)?.label || EXTRA_TIME_OPTIONS[0].label
 );
@@ -146,6 +556,41 @@ const getOfficialDurationSeconds = (paper: Paper): number => (
 const getExtraTimeSeconds = (paper: Paper, extraTimePercent: ExtraTimePercent): number => (
     Math.round(paper.durationMinutes * 60 * (extraTimePercent / 100))
 );
+
+const isWelcomePagePaper = (paper: Paper | null): boolean => (
+    !!paper?.isWelcomePage || paper?.name === WELCOME_PAGE_NAME
+);
+
+const getSingleTimerPaperSequence = (exam: Exam | null): Paper[] => {
+    if (!exam) {
+        return [];
+    }
+
+    const paperByName = new Map(exam.papers.map(paper => [paper.name, paper]));
+    let orderedPaperNames: string[] = [];
+
+    if (exam.name.includes('Starters') || exam.name.includes('Movers') || exam.name.includes('Flyers')) {
+        orderedPaperNames = ['Listening', 'Reading & Writing'];
+    } else if (exam.name.includes('Key')) {
+        orderedPaperNames = ['Reading & Writing', 'Listening'];
+    } else if (exam.name.includes('Preliminary')) {
+        orderedPaperNames = ['Reading', 'Writing', 'Listening'];
+    } else if (
+        exam.name.includes('First')
+        || exam.name.includes('Advanced')
+        || exam.name.includes('Proficiency')
+    ) {
+        orderedPaperNames = ['Reading & Use of English', 'Writing', 'Listening'];
+    }
+
+    const orderedPapers = orderedPaperNames
+        .map(paperName => paperByName.get(paperName))
+        .filter((paper): paper is Paper => !!paper);
+
+    const remainingPapers = exam.papers.filter(paper => !orderedPaperNames.includes(paper.name));
+
+    return [WELCOME_PAGE_PAPER, ...orderedPapers, ...remainingPapers];
+};
 
 const getDisplayPaper = (paper: Paper | null): Paper | null => {
     if (!paper) {
@@ -256,6 +701,7 @@ const App: React.FC = () => {
     const nextMultiTimerIdRef = useRef(2);
     const pausedRemainingMsRef = useRef<number | null>(null);
     const hasTimerCompletedRef = useRef(false);
+    const singlePaperTimerSessionsRef = useRef<Record<string, SinglePaperTimerSession>>({});
 
     // Keyboard navigation support
     useEffect(() => {
@@ -266,13 +712,13 @@ const App: React.FC = () => {
             }
 
             // Space bar to start/pause timer from timer screen only
-            if (event.code === 'Space' && timerMode === 'single' && isTimerScreen && selectedPaper && !selectedPaper.isListening) {
+            if (event.code === 'Space' && timerMode === 'single' && isTimerScreen && selectedPaper && !selectedPaper.isListening && !isWelcomePagePaper(selectedPaper)) {
                 event.preventDefault();
                 handleStartTimer();
             }
 
             // 'R' key to reset timer from timer screen only
-            if (event.code === 'KeyR' && timerMode === 'single' && isTimerScreen && selectedPaper && !selectedPaper.isListening) {
+            if (event.code === 'KeyR' && timerMode === 'single' && isTimerScreen && selectedPaper && !selectedPaper.isListening && !isWelcomePagePaper(selectedPaper)) {
                 event.preventDefault();
                 handleResetTimer();
             }
@@ -547,9 +993,13 @@ const App: React.FC = () => {
     );
 
     // Get paper names for selected exam
-    const paperOptions = useMemo(() => 
-        selectedExam ? selectedExam.papers.map(paper => paper.name) : [],
+    const singleTimerPaperSequence = useMemo(() =>
+        getSingleTimerPaperSequence(selectedExam),
         [selectedExam]
+    );
+    const paperOptions = useMemo(() => 
+        singleTimerPaperSequence.map(paper => paper.name),
+        [singleTimerPaperSequence]
     );
     const extraTimeOptionLabels = useMemo(() =>
         EXTRA_TIME_OPTIONS.filter(option => option.value > 0).map(option => option.label),
@@ -566,6 +1016,7 @@ const App: React.FC = () => {
         setSelectedExam(exam);
         // Reset paper selection when exam changes
         setSelectedPaper(null);
+        singlePaperTimerSessionsRef.current = {};
         pausedRemainingMsRef.current = null;
         hasTimerCompletedRef.current = false;
         // Reset timer state when exam changes
@@ -583,30 +1034,20 @@ const App: React.FC = () => {
     // Handle paper selection
     const handlePaperSelect = (paperName: string) => {
         if (!selectedExam) return;
-        const paper = selectedExam.papers.find(p => p.name === paperName) || null;
+        const paper = singleTimerPaperSequence.find(p => p.name === paperName) || null;
+        saveCurrentSinglePaperSession();
         setSelectedPaper(paper);
         
         // Initialize timer duration based on selected paper
         if (paper) {
-            const durationInSeconds = getOfficialDurationSeconds(paper);
-            pausedRemainingMsRef.current = durationInSeconds * 1000;
-            hasTimerCompletedRef.current = false;
-            setTimerState({
-                timeRemaining: durationInSeconds,
-                extraTimeRemaining: getExtraTimeSeconds(paper, extraTimePercent),
-                isRunning: false,
-                startTime: null,
-                finishTime: null,
-                extraFinishTime: null,
-                phase: 'standard'
-            });
+            restoreSinglePaperSession(paper);
         }
     };
 
     const applySingleExtraTime = (nextExtraTimePercent: ExtraTimePercent) => {
         setExtraTimePercent(nextExtraTimePercent);
 
-        if (!selectedPaper) {
+        if (!selectedPaper || selectedPaper.isListening || isWelcomePagePaper(selectedPaper)) {
             return;
         }
 
@@ -630,6 +1071,131 @@ const App: React.FC = () => {
 
     const handleExtraTimeSelect = (extraTimeLabel: string) => {
         applySingleExtraTime(getExtraTimePercentFromLabel(extraTimeLabel));
+    };
+
+    const getSinglePaperSessionKey = (exam: Exam | null, paper: Paper | null) => (
+        exam && paper ? `${exam.name}::${paper.name}` : null
+    );
+
+    const createTimerStateForPaper = (paper: Paper): SinglePaperTimerSession => {
+        const durationInSeconds = getOfficialDurationSeconds(paper);
+
+        return {
+            timerState: {
+                timeRemaining: durationInSeconds,
+                extraTimeRemaining: getExtraTimeSeconds(paper, extraTimePercent),
+                isRunning: false,
+                startTime: null,
+                finishTime: null,
+                extraFinishTime: null,
+                phase: 'standard'
+            },
+            pausedRemainingMs: durationInSeconds * 1000,
+            hasTimerCompleted: false
+        };
+    };
+
+    const syncSavedSinglePaperSessionToClock = (session: SinglePaperTimerSession): SinglePaperTimerSession => {
+        const { timerState: savedState } = session;
+        const activeFinishTime = savedState.phase === 'extra'
+            ? savedState.extraFinishTime
+            : savedState.finishTime;
+
+        if (!savedState.isRunning || !activeFinishTime) {
+            return session;
+        }
+
+        const remainingMs = Math.max(0, activeFinishTime.getTime() - Date.now());
+
+        if (remainingMs > 0) {
+            return {
+                ...session,
+                pausedRemainingMs: remainingMs,
+                timerState: savedState.phase === 'extra'
+                    ? {
+                        ...savedState,
+                        extraTimeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                    }
+                    : {
+                        ...savedState,
+                        timeRemaining: Math.max(0, Math.ceil(remainingMs / 1000))
+                    }
+            };
+        }
+
+        if (savedState.phase === 'standard' && savedState.extraTimeRemaining > 0) {
+            const elapsedIntoExtraMs = Date.now() - activeFinishTime.getTime();
+            const remainingExtraMs = Math.max(0, (savedState.extraTimeRemaining * 1000) - elapsedIntoExtraMs);
+
+            if (remainingExtraMs > 0) {
+                return {
+                    ...session,
+                    pausedRemainingMs: remainingExtraMs,
+                    timerState: {
+                        ...savedState,
+                        timeRemaining: 0,
+                        extraTimeRemaining: Math.max(0, Math.ceil(remainingExtraMs / 1000)),
+                        isRunning: true,
+                        extraFinishTime: new Date(Date.now() + remainingExtraMs),
+                        phase: 'extra'
+                    }
+                };
+            }
+        }
+
+        return {
+            timerState: {
+                ...savedState,
+                timeRemaining: 0,
+                extraTimeRemaining: 0,
+                isRunning: false,
+                phase: 'complete'
+            },
+            pausedRemainingMs: 0,
+            hasTimerCompleted: true
+        };
+    };
+
+    const saveCurrentSinglePaperSession = () => {
+        const sessionKey = getSinglePaperSessionKey(selectedExam, selectedPaper);
+
+        if (!sessionKey) {
+            return;
+        }
+
+        singlePaperTimerSessionsRef.current[sessionKey] = {
+            timerState,
+            pausedRemainingMs: pausedRemainingMsRef.current,
+            hasTimerCompleted: hasTimerCompletedRef.current
+        };
+    };
+
+    const restoreSinglePaperSession = (paper: Paper) => {
+        const sessionKey = getSinglePaperSessionKey(selectedExam, paper);
+        const savedSession = sessionKey
+            ? singlePaperTimerSessionsRef.current[sessionKey]
+            : null;
+        const nextSession = savedSession
+            ? syncSavedSinglePaperSessionToClock(savedSession)
+            : createTimerStateForPaper(paper);
+
+        pausedRemainingMsRef.current = nextSession.pausedRemainingMs;
+        hasTimerCompletedRef.current = nextSession.hasTimerCompleted;
+        setTimerState(nextSession.timerState);
+
+        if (sessionKey) {
+            singlePaperTimerSessionsRef.current[sessionKey] = nextSession;
+        }
+    };
+
+    const confirmNavigateFromRunningSingleTimer = () => {
+        if (!timerState.isRunning || !selectedPaper || selectedPaper.isListening || isWelcomePagePaper(selectedPaper)) {
+            return true;
+        }
+
+        return window.confirm(
+            'The current timer is still running. Are you sure you want to navigate away from this paper? This may interrupt the timer display. Click OK to continue, or Cancel to stay on this paper.'
+        );
     };
 
     const handleMultiExamSelect = (timerId: number, examName: string) => {
@@ -871,7 +1437,7 @@ const App: React.FC = () => {
 
     // Start timer function
     const handleStartTimer = () => {
-        if (!selectedPaper || selectedPaper.isListening) return;
+        if (!selectedPaper || selectedPaper.isListening || isWelcomePagePaper(selectedPaper)) return;
         
         setTimerState(prevState => {
             const currentRemaining = prevState.phase === 'extra'
@@ -951,7 +1517,7 @@ const App: React.FC = () => {
 
     // Reset timer function
     const handleResetTimer = () => {
-        if (!selectedPaper || selectedPaper.isListening) return;
+        if (!selectedPaper || selectedPaper.isListening || isWelcomePagePaper(selectedPaper)) return;
         
         const durationInSeconds = getOfficialDurationSeconds(selectedPaper);
         pausedRemainingMsRef.current = durationInSeconds * 1000;
@@ -1030,6 +1596,39 @@ const App: React.FC = () => {
     const canOpenTimerScreen = timerMode === 'single'
         ? !!selectedExam && !!selectedPaper
         : hasReadyMultiTimer;
+    const selectedSinglePaperIndex = selectedPaper
+        ? singleTimerPaperSequence.findIndex(paper => paper.name === selectedPaper.name)
+        : -1;
+    const canGoToPreviousSinglePaper = selectedSinglePaperIndex > 0;
+    const canGoToNextSinglePaper = selectedSinglePaperIndex >= 0
+        && selectedSinglePaperIndex < singleTimerPaperSequence.length - 1;
+
+    const selectSinglePaperByIndex = (paperIndex: number) => {
+        const nextPaper = singleTimerPaperSequence[paperIndex];
+
+        if (!nextPaper) {
+            return;
+        }
+
+        if (!confirmNavigateFromRunningSingleTimer()) {
+            return;
+        }
+
+        handlePaperSelect(nextPaper.name);
+        setIsSingleExtraTimeExpanded(false);
+    };
+
+    const handlePreviousSinglePaper = () => {
+        if (canGoToPreviousSinglePaper) {
+            selectSinglePaperByIndex(selectedSinglePaperIndex - 1);
+        }
+    };
+
+    const handleNextSinglePaper = () => {
+        if (canGoToNextSinglePaper) {
+            selectSinglePaperByIndex(selectedSinglePaperIndex + 1);
+        }
+    };
 
     const toggleMultiExtraTimeExpanded = (timerId: number) => {
         setExpandedMultiExtraTimerIds(prevIds => (
@@ -1385,7 +1984,7 @@ const App: React.FC = () => {
                         })}
                     </main>
 
-                    <div className="flex h-[clamp(5rem,8vh,6.25rem)] flex-none items-center justify-center gap-[clamp(0.75rem,2vmin,2rem)] px-4 pb-2 pt-1 max-sm:sticky max-sm:bottom-0 max-sm:z-20 max-sm:h-20 max-sm:bg-slate-100/95 max-sm:backdrop-blur">
+                    <div className="flex h-[clamp(6rem,10vh,7.5rem)] flex-none items-center justify-center gap-[clamp(0.75rem,2vmin,2rem)] px-4 py-4 max-sm:sticky max-sm:bottom-0 max-sm:z-20 max-sm:h-20 max-sm:bg-slate-100/95 max-sm:py-2 max-sm:backdrop-blur sm:px-6">
                         <button
                             type="button"
                             onClick={handleToggleAllMultiTimers}
@@ -1415,6 +2014,7 @@ const App: React.FC = () => {
 
         const singleOfficialTimeUp = timerState.phase === 'extra' || timerState.phase === 'complete';
         const singleExtraTotalSeconds = selectedPaper ? getExtraTimeSeconds(selectedPaper, extraTimePercent) : 0;
+        const isSingleWelcomePage = isWelcomePagePaper(selectedPaper);
 
         return (
             <div 
@@ -1429,15 +2029,30 @@ const App: React.FC = () => {
                     <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl animate-pulse" style={{animationDelay: '4s'}}></div>
                 </div>
 
-                <Header
-                    isFullScreen={true}
-                    className="relative z-10"
-                    onBackToHome={handleBackToHomeScreen}
-                    onToggleFullscreen={handleToggleBrowserFullScreen}
-                    isFullscreenActive={isBrowserFullScreen}
-                    centreNumber={CENTRE_NUMBER}
-                />
+                {!isSingleWelcomePage && (
+                    <Header
+                        isFullScreen={true}
+                        className="relative z-10"
+                        onBackToHome={handleBackToHomeScreen}
+                        onToggleFullscreen={handleToggleBrowserFullScreen}
+                        isFullscreenActive={isBrowserFullScreen}
+                        centreNumber={CENTRE_NUMBER}
+                    />
+                )}
 
+                {isSingleWelcomePage && selectedExam ? (
+                    <main className="relative z-10 flex-1 min-h-0 overflow-hidden">
+                        <WelcomePageDisplay
+                            examName={selectedExam.name}
+                            centreNumber={CENTRE_NUMBER}
+                            onNext={handleNextSinglePaper}
+                            onBackToHome={handleBackToHomeScreen}
+                            onToggleFullscreen={handleToggleBrowserFullScreen}
+                            canGoNext={canGoToNextSinglePaper}
+                            isFullscreenActive={isBrowserFullScreen}
+                        />
+                    </main>
+                ) : (
                 <div className="relative z-10 flex-1 min-h-0 flex flex-col overflow-y-auto max-sm:overflow-visible md:flex-row md:overflow-hidden">
                 {/* Left Panel - Exam Information */}
                 <section 
@@ -1458,7 +2073,7 @@ const App: React.FC = () => {
                             selectedPaper={displaySelectedPaper}
                             timerState={timerState}
                             isFullScreen={true}
-                            extraTimePercent={extraTimePercent}
+                            extraTimePercent={selectedPaper.isListening ? 0 : extraTimePercent}
                         />
                     ) : (
                         <div className="text-center">
@@ -1477,9 +2092,18 @@ const App: React.FC = () => {
                     className="w-full md:w-1/2 bg-white flex flex-col justify-center items-center relative min-h-0 max-sm:min-h-[calc(100dvh-18rem)]"
                     aria-label="Timer display and controls"
                 >
+                    {selectedExam && selectedPaper && (
+                        <PaperNavigationControls
+                            onPrevious={handlePreviousSinglePaper}
+                            onNext={handleNextSinglePaper}
+                            canGoPrevious={canGoToPreviousSinglePaper}
+                            canGoNext={canGoToNextSinglePaper}
+                            className="pointer-events-none absolute inset-x-[clamp(1rem,3vmin,2rem)] bottom-[clamp(1rem,3vmin,2rem)] z-20 justify-between"
+                        />
+                    )}
                     {selectedExam && selectedPaper ? (
                         selectedPaper.isListening ? (
-                            <div className="text-center">
+                            <div className="flex h-full w-full flex-col items-center justify-center gap-10 p-8 text-center">
                                 <div className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-700 mb-6">
                                     {'\u{1F3A7} Listening Test'}
                                 </div>
@@ -1559,6 +2183,7 @@ const App: React.FC = () => {
                     )}
                 </section>
             </div>
+                )}
             </div>
         );
     }
@@ -1649,25 +2274,25 @@ const App: React.FC = () => {
                                 </div>
 
                                 <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-3 max-sm:grid-cols-1">
-                                    <label className={`inline-flex items-center gap-3 text-sm font-semibold ${selectedPaper ? 'text-slate-700' : 'text-slate-400'}`}>
+                                    <label className={`inline-flex items-center gap-3 text-sm font-semibold ${selectedPaper && !selectedPaper.isListening ? 'text-slate-700' : 'text-slate-400'}`}>
                                         <input
                                             type="checkbox"
-                                            checked={extraTimePercent > 0}
+                                            checked={extraTimePercent > 0 && !!selectedPaper && !selectedPaper.isListening}
                                             onChange={(event) => handleExtraTimeToggle(event.target.checked)}
-                                            disabled={!selectedPaper}
+                                            disabled={!selectedPaper || selectedPaper.isListening}
                                             className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                                         />
                                         Do any candidates have extra time?
                                     </label>
 
                                     <div className="min-h-[3.125rem]">
-                                        {extraTimePercent > 0 && (
+                                        {extraTimePercent > 0 && selectedPaper && !selectedPaper.isListening && (
                                         <Dropdown
                                             id="extra-time-select"
                                             options={extraTimeOptionLabels}
                                             value={getExtraTimeLabel(extraTimePercent)}
                                             onChange={handleExtraTimeSelect}
-                                            disabled={!selectedPaper}
+                                            disabled={!selectedPaper || selectedPaper.isListening}
                                             placeholder="Choose extra time..."
                                             aria-label="Select extra time allowance"
                                         />
@@ -1676,7 +2301,7 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* Exam Information Preview */}
-                                {selectedExam && selectedPaper && (
+                                {selectedExam && selectedPaper && !isWelcomePagePaper(selectedPaper) && (
                                     <div className="mt-6 sm:mt-8 space-y-4">
                                         <ExamInfoDisplay
                                             selectedExam={selectedExam}
@@ -1684,7 +2309,7 @@ const App: React.FC = () => {
                                             timerState={timerState}
                                             isFullScreen={false}
                                             showTimes={false}
-                                            extraTimePercent={extraTimePercent}
+                                            extraTimePercent={selectedPaper.isListening ? 0 : extraTimePercent}
                                         />
                                     </div>
                                 )}

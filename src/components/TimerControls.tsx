@@ -5,8 +5,12 @@ interface TimerControlsProps {
   onStart: () => void;
   onPause: () => void;
   onReset: () => void;
+  onPrevious?: () => void;
+  onNext?: () => void;
   isRunning: boolean;
   isDisabled?: boolean; // For listening papers
+  canGoPrevious?: boolean;
+  canGoNext?: boolean;
   isFullScreen?: boolean;
   className?: string;
 }
@@ -15,8 +19,12 @@ const TimerControls: React.FC<TimerControlsProps> = ({
   onStart,
   onPause,
   onReset,
+  onPrevious,
+  onNext,
   isRunning,
   isDisabled = false,
+  canGoPrevious = false,
+  canGoNext = false,
   isFullScreen = false,
   className = ''
 }) => {
@@ -44,6 +52,7 @@ const TimerControls: React.FC<TimerControlsProps> = ({
 
   // Icon size based on full-screen mode
   const iconSize = isFullScreen ? 24 : 20;
+  const navigationIconSize = isFullScreen ? 40 : 24;
 
   // Start/Pause button styling
   const startPauseClasses = isRunning
@@ -56,6 +65,12 @@ const TimerControls: React.FC<TimerControlsProps> = ({
     bg-slate-500 hover:bg-slate-600 focus:ring-slate-500 text-white
   `;
 
+  const navigationClasses = `
+    ${baseButtonClasses} ${buttonSizeClasses}
+    rounded-lg bg-white/0 text-blue-600 shadow-[0_0.18rem_0.35rem_rgba(15,23,42,0.22)]
+    hover:scale-105 hover:bg-white/20 hover:text-blue-700 focus:ring-blue-500
+  `;
+
   // Container classes based on full-screen mode - horizontal for full screen
   const containerClasses = isFullScreen
     ? 'flex items-center justify-center gap-[clamp(0.75rem,2vmin,2rem)]'
@@ -63,6 +78,33 @@ const TimerControls: React.FC<TimerControlsProps> = ({
 
   return (
     <div className={`${containerClasses} ${className}`}>
+      {onPrevious && (
+        <button
+          onClick={onPrevious}
+          disabled={!canGoPrevious}
+          className={navigationClasses}
+          aria-label="Previous paper"
+          title="Previous paper"
+        >
+          <svg
+            width={navigationIconSize}
+            height={navigationIconSize}
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M15 18L9 12L15 6"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
+
       {/* Start/Pause Button */}
       <button
         onClick={handleStartPause}
@@ -115,6 +157,33 @@ const TimerControls: React.FC<TimerControlsProps> = ({
           </>
         )}
       </button>
+
+      {onNext && (
+        <button
+          onClick={onNext}
+          disabled={!canGoNext}
+          className={navigationClasses}
+          aria-label="Next paper"
+          title="Next paper"
+        >
+          <svg
+            width={navigationIconSize}
+            height={navigationIconSize}
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M9 18L15 12L9 6"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
     </div>
   );
 };

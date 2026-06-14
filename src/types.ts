@@ -4,6 +4,7 @@ export interface Paper {
   name: string;
   durationMinutes: number;
   isListening?: boolean;
+  isWelcomePage?: boolean;
 }
 
 export interface Exam {

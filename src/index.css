@@ -32,6 +32,28 @@
     animation: gradient-shift 15s ease infinite;
 }
 
+.welcome-smoke-bg {
+    background:
+        linear-gradient(rgba(29, 78, 216, 0.08), rgba(30, 64, 175, 0.18)),
+        url('/welcome-wispy-bg.png') center / cover no-repeat,
+        #1d4ed8;
+}
+
+.welcome-logo-globe {
+    width: clamp(20rem, 34vw, 38rem);
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border-radius: 9999px;
+    filter: drop-shadow(0 1.7rem 3.4rem rgba(30, 64, 175, 0.26));
+}
+
+.welcome-logo-globe canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
 /* Ensure proper font loading for timer display */
 .timer-display {
     font-variant-numeric: tabular-nums;
@@ -85,7 +107,7 @@ button:disabled, select:disabled {
     .pulse-urgency {
         animation: none;
     }
-    
+
     button, select, [role="button"] {
         transition: none;
     }

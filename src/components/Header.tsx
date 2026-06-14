@@ -31,14 +31,14 @@ const Header: React.FC<HeaderProps> = ({
 
   if (isFullScreen) {
     return (
-      <header className={`bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-3 py-2 shadow-xl sm:px-6 sm:py-4 lg:px-8 ${className}`}>
+      <header className={`flex h-[6.875rem] shrink-0 items-center bg-gradient-to-r from-blue-600 to-indigo-700 px-4 py-4 text-white shadow-xl sm:h-[9.25rem] sm:px-6 sm:py-6 ${className}`}>
         <div className="w-full flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-6">
             <span className="sm:hidden">
-              <LenguasVivasLogo size={88} />
+              <LenguasVivasLogo size={92} />
             </span>
             <span className="hidden sm:inline">
-              <LenguasVivasLogo size={140} />
+              <LenguasVivasLogo size={160} />
             </span>
             {centreNumberBlock}
           </div>
@@ -102,8 +102,8 @@ const Header: React.FC<HeaderProps> = ({
   }
 
   return (
-    <header className={`bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-4 shadow-xl sm:px-6 sm:py-6 ${className}`}>
-      <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+    <header className={`flex h-[6.875rem] shrink-0 items-center bg-gradient-to-r from-blue-600 to-indigo-700 px-4 py-4 text-white shadow-xl sm:h-[9.25rem] sm:px-6 sm:py-6 ${className}`}>
+      <div className="flex w-full items-center justify-between gap-4">
         <div className="flex items-center gap-3 sm:gap-6">
           {/* Lenguas Vivas Logo */}
           <span className="sm:hidden">
