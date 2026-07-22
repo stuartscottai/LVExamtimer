@@ -140,7 +140,7 @@ const TimerControls: React.FC<TimerControlsProps> = ({
 
       {/* Reset Button */}
       <button
-        onClick={onReset}
+        onClick={() => onReset()}
         disabled={isDisabled}
         className={resetClasses}
         aria-label="Reset timer"

@@ -6,7 +6,7 @@ import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import segoeUiBoldFontData from './assets/fonts/segoe-ui-bold.typeface.json';
 import segoeUiRegularFontData from './assets/fonts/segoe-ui-regular.typeface.json';
 import worldLandGeoJson from './data/world-land-geometry.json';
-import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, ExpandToggleIcon, PauseIcon, PlayIcon, ResetIcon } from './components';
+import { Header, Dropdown, TimerDisplay, TimerControls, ExamInfoDisplay, ExpandToggleIcon, LenguasVivasLogo, PauseIcon, PlayIcon, ResetIcon } from './components';
 import { CAMBRIDGE_EXAMS, CENTRE_NUMBER, MULTIPLE_EXAM_OPTIONS } from './constants';
 import { Exam, Paper, TimerState } from './types';
 import { formatDuration, formatTime, formatTimeHHMM } from './utils';
@@ -921,6 +921,76 @@ const formatFourDigitTimerDisplay = (seconds: number): string => {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
+interface TimerActionConfirmation {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+}
+
+interface TimerActionConfirmationDialogProps {
+    confirmation: TimerActionConfirmation;
+    onCancel: () => void;
+    onConfirm: () => void;
+}
+
+const TimerActionConfirmationDialog: React.FC<TimerActionConfirmationDialogProps> = ({
+    confirmation,
+    onCancel,
+    onConfirm
+}) => (
+    <div
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-gradient-to-br from-slate-950/80 via-blue-950/75 to-indigo-950/80 p-4 backdrop-blur-md"
+        role="presentation"
+        onMouseDown={event => {
+            if (event.target === event.currentTarget) {
+                onCancel();
+            }
+        }}
+    >
+        <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="timer-action-confirmation-title"
+            aria-describedby="timer-action-confirmation-message"
+            className="w-full max-w-md overflow-hidden rounded-xl border border-blue-300/70 bg-white text-slate-900 shadow-[0_1.25rem_3.5rem_rgba(15,23,42,0.4)]"
+        >
+            <div className="flex items-center bg-gradient-to-r from-blue-600 to-indigo-700 px-5 py-3 text-white">
+                <LenguasVivasLogo size={76} />
+            </div>
+            <div className="p-5">
+                <h2 id="timer-action-confirmation-title" className="text-xl font-bold text-slate-900">
+                    {confirmation.title}
+                </h2>
+                <p className="mt-3 flex items-center gap-2 font-semibold text-emerald-700">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                    The timer is still running.
+                </p>
+                <p id="timer-action-confirmation-message" className="mt-2 text-base leading-relaxed text-slate-600">
+                    {confirmation.message}
+                </p>
+                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        onClick={onConfirm}
+                        className="rounded-lg border border-red-200 bg-white px-4 py-2.5 font-semibold text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                    >
+                        {confirmation.confirmLabel}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        autoFocus
+                        className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-700 px-5 py-2.5 font-bold text-white shadow-sm transition-colors hover:from-blue-700 hover:to-indigo-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    >
+                        Keep timer running
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
 // Main App Component
 const App: React.FC = () => {
     const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
@@ -935,6 +1005,7 @@ const App: React.FC = () => {
     const [isBrowserFullScreen, setIsBrowserFullScreen] = useState(false);
     const [isSingleExtraTimeExpanded, setIsSingleExtraTimeExpanded] = useState(false);
     const [expandedMultiExtraTimerIds, setExpandedMultiExtraTimerIds] = useState<number[]>([]);
+    const [timerActionConfirmation, setTimerActionConfirmation] = useState<TimerActionConfirmation | null>(null);
 
     // Timer interval reference
     const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -944,9 +1015,32 @@ const App: React.FC = () => {
     const hasTimerCompletedRef = useRef(false);
     const singlePaperTimerSessionsRef = useRef<Record<string, SinglePaperTimerSession>>({});
 
+    const closeTimerActionConfirmation = () => setTimerActionConfirmation(null);
+    const confirmTimerAction = () => {
+        const action = timerActionConfirmation?.onConfirm;
+        setTimerActionConfirmation(null);
+        action?.();
+    };
+
+    const timerActionConfirmationDialog = timerActionConfirmation ? (
+        <TimerActionConfirmationDialog
+            confirmation={timerActionConfirmation}
+            onCancel={closeTimerActionConfirmation}
+            onConfirm={confirmTimerAction}
+        />
+    ) : null;
+
     // Keyboard navigation support
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
+            if (timerActionConfirmation) {
+                if (event.code === 'Escape') {
+                    event.preventDefault();
+                    closeTimerActionConfirmation();
+                }
+                return;
+            }
+
             // Only handle keyboard shortcuts when not in an input field
             if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement) {
                 return;
@@ -979,7 +1073,7 @@ const App: React.FC = () => {
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [selectedPaper, isTimerScreen, isBrowserFullScreen, timerState.isRunning, timerMode]);
+    }, [selectedPaper, isTimerScreen, isBrowserFullScreen, timerState.isRunning, timerMode, timerActionConfirmation]);
 
     // Timer countdown effect (clock-based to avoid interval drift)
     useEffect(() => {
@@ -1550,7 +1644,19 @@ const App: React.FC = () => {
         )));
     };
 
-    const handleStartMultiTimer = (timerId: number) => {
+    const handleStartMultiTimer = (timerId: number, pauseConfirmed = false) => {
+        const selectedTimer = multiTimers.find(timer => timer.id === timerId);
+
+        if (selectedTimer?.timerState.isRunning && !pauseConfirmed) {
+            setTimerActionConfirmation({
+                title: 'Pause this timer?',
+                message: 'Please confirm what you want to do. Pausing will change the finish time.',
+                confirmLabel: 'Pause timer',
+                onConfirm: () => handleStartMultiTimer(timerId, true)
+            });
+            return;
+        }
+
         updateMultiTimer(timerId, timer => {
             const currentRemaining = timer.timerState.phase === 'extra'
                 ? timer.timerState.extraTimeRemaining
@@ -1632,7 +1738,19 @@ const App: React.FC = () => {
         });
     };
 
-    const handleResetMultiTimer = (timerId: number) => {
+    const handleResetMultiTimer = (timerId: number, resetConfirmed = false) => {
+        const selectedTimer = multiTimers.find(timer => timer.id === timerId);
+
+        if (selectedTimer?.timerState.isRunning && !resetConfirmed) {
+            setTimerActionConfirmation({
+                title: 'Reset this timer?',
+                message: 'Please confirm what you want to do. Resetting will erase the timer times.',
+                confirmLabel: 'Reset timer',
+                onConfirm: () => handleResetMultiTimer(timerId, true)
+            });
+            return;
+        }
+
         updateMultiTimer(timerId, timer => {
             if (!timer.selectedPaper || timer.selectedPaper.isListening) {
                 return timer;
@@ -1664,21 +1782,51 @@ const App: React.FC = () => {
         });
     };
 
-    const handlePauseAllMultiTimers = () => {
+    const handlePauseAllMultiTimers = (pauseConfirmed = false) => {
+        if (!pauseConfirmed && hasRunningMultiTimer) {
+            setTimerActionConfirmation({
+                title: 'Pause all running timers?',
+                message: 'Please confirm what you want to do. Pausing will change the finish times.',
+                confirmLabel: 'Pause all timers',
+                onConfirm: () => handlePauseAllMultiTimers(true)
+            });
+            return;
+        }
+
         multiTimers.forEach(timer => {
             if (timer.timerState.isRunning) {
-                handleStartMultiTimer(timer.id);
+                handleStartMultiTimer(timer.id, true);
             }
         });
     };
 
-    const handleResetAllMultiTimers = () => {
-        multiTimers.forEach(timer => handleResetMultiTimer(timer.id));
+    const handleResetAllMultiTimers = (resetConfirmed = false) => {
+        if (!resetConfirmed && hasRunningMultiTimer) {
+            setTimerActionConfirmation({
+                title: 'Reset all timers?',
+                message: 'Please confirm what you want to do. Resetting will erase the timer times.',
+                confirmLabel: 'Reset all timers',
+                onConfirm: () => handleResetAllMultiTimers(true)
+            });
+            return;
+        }
+
+        multiTimers.forEach(timer => handleResetMultiTimer(timer.id, true));
     };
 
     // Start timer function
-    const handleStartTimer = () => {
+    const handleStartTimer = (pauseConfirmed = false) => {
         if (!selectedPaper || selectedPaper.isListening || isWelcomePagePaper(selectedPaper)) return;
+
+        if (timerState.isRunning && !pauseConfirmed) {
+            setTimerActionConfirmation({
+                title: 'Pause this timer?',
+                message: 'Please confirm what you want to do. Pausing will change the finish time.',
+                confirmLabel: 'Pause timer',
+                onConfirm: () => handleStartTimer(true)
+            });
+            return;
+        }
         
         setTimerState(prevState => {
             const currentRemaining = prevState.phase === 'extra'
@@ -1757,8 +1905,18 @@ const App: React.FC = () => {
     };
 
     // Reset timer function
-    const handleResetTimer = () => {
+    const handleResetTimer = (resetConfirmed = false) => {
         if (!selectedPaper || selectedPaper.isListening || isWelcomePagePaper(selectedPaper)) return;
+
+        if (timerState.isRunning && !resetConfirmed) {
+            setTimerActionConfirmation({
+                title: 'Reset this timer?',
+                message: 'Please confirm what you want to do. Resetting will erase the timer times.',
+                confirmLabel: 'Reset timer',
+                onConfirm: () => handleResetTimer(true)
+            });
+            return;
+        }
         
         const durationInSeconds = getOfficialDurationSeconds(selectedPaper);
         pausedRemainingMsRef.current = durationInSeconds * 1000;
@@ -1895,6 +2053,7 @@ const App: React.FC = () => {
                     role="application"
                     aria-label="Multiple exam timer screen display"
                 >
+                    {timerActionConfirmationDialog}
                     <Header
                         isFullScreen={true}
                         className="relative z-10"
@@ -2241,7 +2400,7 @@ const App: React.FC = () => {
                         </button>
                         <button
                             type="button"
-                            onClick={handleResetAllMultiTimers}
+                            onClick={() => handleResetAllMultiTimers()}
                             className="inline-flex h-[clamp(2.75rem,7vmin,5rem)] w-[clamp(2.75rem,7vmin,5rem)] items-center justify-center rounded-lg bg-slate-500 text-white shadow-md transition-colors hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
                             aria-label="Reset all timers"
                             title="Reset all timers"
@@ -2263,6 +2422,7 @@ const App: React.FC = () => {
                 role="application"
                 aria-label="Exam timer screen display"
             >
+                {timerActionConfirmationDialog}
                 {/* Animated background elements */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
